@@ -1,0 +1,223 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "AzLabBuilder - AMA Heartbeat lab: Linux VMs + Azure Monitor Agent + DCR + Log Analytics + health workbook."
+  },
+  "parameters": {
+    "location": { "type": "string", "defaultValue": "swedencentral" },
+    "vmCount": { "type": "int", "defaultValue": 10, "minValue": 1, "maxValue": 50 },
+    "vmPrefix": { "type": "string", "defaultValue": "vm-amahb" },
+    "vmSize": { "type": "string", "defaultValue": "Standard_B1s" },
+    "adminUsername": { "type": "string", "defaultValue": "labadmin" },
+    "adminPassword": { "type": "securestring" },
+    "workspaceName": { "type": "string" },
+    "dcrName": { "type": "string" },
+    "workbookId": { "type": "string", "metadata": { "description": "GUID used as workbook resource name." } },
+    "workbookDisplayName": { "type": "string", "defaultValue": "AzLabBuilder - AMA Heartbeat Health" },
+    "workbookSerializedData": { "type": "string" },
+    "tags": { "type": "object", "defaultValue": {} }
+  },
+  "variables": {
+    "vnetName": "[format('{0}-vnet', parameters('vmPrefix'))]",
+    "subnetName": "snet-vms",
+    "nsgName": "[format('{0}-nsg', parameters('vmPrefix'))]",
+    "workspaceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+    "dcrId": "[resourceId('Microsoft.Insights/dataCollectionRules', parameters('dcrName'))]",
+    "subnetId": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), variables('subnetName'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2023-09-01",
+      "name": "[parameters('workspaceName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "sku": { "name": "PerGB2018" },
+        "retentionInDays": 30
+      }
+    },
+    {
+      "comments": "AMA sends Heartbeat to every Log Analytics destination of an associated DCR. Syslog (critical+) keeps ingestion minimal.",
+      "type": "Microsoft.Insights/dataCollectionRules",
+      "apiVersion": "2022-06-01",
+      "name": "[parameters('dcrName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "Linux",
+      "dependsOn": [ "[variables('workspaceId')]" ],
+      "properties": {
+        "description": "AzLabBuilder AMA heartbeat lab",
+        "dataSources": {
+          "syslog": [
+            {
+              "name": "syslogCritical",
+              "streams": [ "Microsoft-Syslog" ],
+              "facilityNames": [ "daemon", "kern" ],
+              "logLevels": [ "Critical", "Alert", "Emergency" ]
+            }
+          ]
+        },
+        "destinations": {
+          "logAnalytics": [
+            { "name": "la", "workspaceResourceId": "[variables('workspaceId')]" }
+          ]
+        },
+        "dataFlows": [
+          { "streams": [ "Microsoft-Syslog" ], "destinations": [ "la" ] }
+        ]
+      }
+    },
+    {
+      "comments": "No inbound rules: VMs are not reachable from the internet.",
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "apiVersion": "2024-05-01",
+      "name": "[variables('nsgName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": { "securityRules": [] }
+    },
+    {
+      "comments": "defaultOutboundAccess=true lets AMA reach Azure Monitor without a public IP or NAT gateway (lab only).",
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2024-05-01",
+      "name": "[variables('vnetName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "dependsOn": [ "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]" ],
+      "properties": {
+        "addressSpace": { "addressPrefixes": [ "10.42.0.0/24" ] },
+        "subnets": [
+          {
+            "name": "[variables('subnetName')]",
+            "properties": {
+              "addressPrefix": "10.42.0.0/25",
+              "defaultOutboundAccess": true,
+              "networkSecurityGroup": { "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]" }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/networkInterfaces",
+      "apiVersion": "2024-05-01",
+      "name": "[format('{0}-{1}-nic', parameters('vmPrefix'), padLeft(copyIndex(1), 2, '0'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "copy": { "name": "nicLoop", "count": "[parameters('vmCount')]" },
+      "dependsOn": [ "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]" ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": { "id": "[variables('subnetId')]" }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2024-07-01",
+      "name": "[format('{0}-{1}', parameters('vmPrefix'), padLeft(copyIndex(1), 2, '0'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "copy": { "name": "vmLoop", "count": "[parameters('vmCount')]" },
+      "identity": { "type": "SystemAssigned" },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/networkInterfaces', format('{0}-{1}-nic', parameters('vmPrefix'), padLeft(copyIndex(1), 2, '0')))]"
+      ],
+      "properties": {
+        "hardwareProfile": { "vmSize": "[parameters('vmSize')]" },
+        "osProfile": {
+          "computerName": "[format('{0}-{1}', parameters('vmPrefix'), padLeft(copyIndex(1), 2, '0'))]",
+          "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]",
+          "linuxConfiguration": { "disablePasswordAuthentication": false }
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "Canonical",
+            "offer": "0001-com-ubuntu-server-jammy",
+            "sku": "22_04-lts-gen2",
+            "version": "latest"
+          },
+          "osDisk": {
+            "name": "[format('{0}-{1}-osdisk', parameters('vmPrefix'), padLeft(copyIndex(1), 2, '0'))]",
+            "createOption": "FromImage",
+            "deleteOption": "Delete",
+            "managedDisk": { "storageAccountType": "Standard_LRS" }
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', format('{0}-{1}-nic', parameters('vmPrefix'), padLeft(copyIndex(1), 2, '0')))]",
+              "properties": { "deleteOption": "Delete" }
+            }
+          ]
+        },
+        "diagnosticsProfile": { "bootDiagnostics": { "enabled": true } }
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "apiVersion": "2024-07-01",
+      "name": "[format('{0}-{1}/AzureMonitorLinuxAgent', parameters('vmPrefix'), padLeft(copyIndex(1), 2, '0'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "copy": { "name": "amaLoop", "count": "[parameters('vmCount')]" },
+      "dependsOn": [
+        "[resourceId('Microsoft.Compute/virtualMachines', format('{0}-{1}', parameters('vmPrefix'), padLeft(copyIndex(1), 2, '0')))]"
+      ],
+      "properties": {
+        "publisher": "Microsoft.Azure.Monitor",
+        "type": "AzureMonitorLinuxAgent",
+        "typeHandlerVersion": "1.0",
+        "autoUpgradeMinorVersion": true,
+        "enableAutomaticUpgrade": true
+      }
+    },
+    {
+      "type": "Microsoft.Insights/dataCollectionRuleAssociations",
+      "apiVersion": "2022-06-01",
+      "name": "[format('{0}-{1}-dcra', parameters('vmPrefix'), padLeft(copyIndex(1), 2, '0'))]",
+      "scope": "[format('Microsoft.Compute/virtualMachines/{0}-{1}', parameters('vmPrefix'), padLeft(copyIndex(1), 2, '0'))]",
+      "copy": { "name": "dcraLoop", "count": "[parameters('vmCount')]" },
+      "dependsOn": [
+        "[resourceId('Microsoft.Compute/virtualMachines', format('{0}-{1}', parameters('vmPrefix'), padLeft(copyIndex(1), 2, '0')))]",
+        "[variables('dcrId')]"
+      ],
+      "properties": {
+        "description": "AzLabBuilder AMA heartbeat association",
+        "dataCollectionRuleId": "[variables('dcrId')]"
+      }
+    },
+    {
+      "type": "Microsoft.Insights/workbooks",
+      "apiVersion": "2022-04-01",
+      "name": "[parameters('workbookId')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "shared",
+      "dependsOn": [ "[variables('workspaceId')]" ],
+      "properties": {
+        "displayName": "[parameters('workbookDisplayName')]",
+        "serializedData": "[parameters('workbookSerializedData')]",
+        "version": "1.0",
+        "category": "workbook",
+        "sourceId": "[toLower(variables('workspaceId'))]"
+      }
+    }
+  ],
+  "outputs": {
+    "workspaceResourceId": { "type": "string", "value": "[variables('workspaceId')]" },
+    "workspaceCustomerId": { "type": "string", "value": "[reference(variables('workspaceId'), '2023-09-01').customerId]" },
+    "workbookResourceId": { "type": "string", "value": "[resourceId('Microsoft.Insights/workbooks', parameters('workbookId'))]" },
+    "dcrResourceId": { "type": "string", "value": "[variables('dcrId')]" }
+  }
+}
