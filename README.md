@@ -22,25 +22,35 @@ A PowerShell console (TUI) tool for deploying ready-to-use Azure lab scenarios. 
 
 ### Dashboard
 
-| Box | Source | Meaning |
-|---|---|---|
-| **Overall VMs in running state** | Azure Resource Graph | Count of VMs with power state `running`, out of all VMs in scope |
-| **Healthy** | Log Analytics + `arg("")` | Running VMs with an AMA heartbeat within the threshold |
-| **Unhealthy** | Log Analytics + `arg("")` | Running VMs with **no AMA heartbeat for more than 10 minutes** |
-| **Unhealthy VMs** (tiles) | same | One red tile **per VM name**, showing the minutes since its last heartbeat (or "no heartbeat in 24h") |
-| Detail table | same | Every running VM with its health, size, last heartbeat and minutes since |
+A running VM only counts as **unhealthy** after it has been up for longer than the **startup grace** period (default 10 min) **and** has sent no AMA heartbeat within the **threshold** (default 10 min). The VM's start time comes from Azure **Resource Health** start/allocate/restart events (or its creation time). A freshly started VM shows as **Starting** instead, so a VM that is still booting doesn't cause noise.
 
-Stopped or deallocated VMs are **ignored**. The workbook has two parameters: `Heartbeat threshold (min)` (default 10) and `Resource group` (default: the lab RG; `*` = the whole subscription).
+| Box | Meaning |
+|---|---|
+| **Running** | VMs in the `running` power state |
+| **Healthy** | Running, past the grace period, with an AMA heartbeat within the threshold |
+| **Unhealthy** | Running for longer than the grace period, with **no AMA heartbeat for more than the threshold** |
+| **Starting** | Started less than the grace period ago; heartbeats aren't expected yet |
+| **Deallocated** | VMs that are currently deallocated |
+| **Healthy vs. unhealthy chart** | Line chart in threshold-sized buckets: **Running** (blue), **Healthy** (green), **Unhealthy** (red) and Starting (gray). Shows how many of the running VMs were actually unhealthy at each point in time |
+| **Unhealthy VMs** (tiles) | One red tile **per VM name**, showing uptime and minutes since the last heartbeat |
+| Detail table | Every VM with health, power state, last start, uptime and last heartbeat |
+
+Workbook parameters:
+- `Heartbeat threshold (min)`
+- `Startup grace (min)`
+- `Resource group` (default: the lab RG; `*` = the whole subscription)
+- `Chart time range` (1 h to 14 days)
+
+**No extra data is collected.** Power state and start/stop history come from Azure Resource Graph (`Resources`, `healthresources`, `healthresourcechanges`), which is free and holds 14 days of history. Log Analytics reads them through `arg("")`, and the only table used is the `Heartbeat` table that AMA writes anyway.
 
 ```mermaid
 flowchart LR
   VM[10x Linux VM + AMA] -- Heartbeat --> LAW[(Log Analytics)]
   DCR[Data Collection Rule] -. associated .-> VM
-  ARG[(Azure Resource Graph<br/>power state)] --> WB[Workbook]
-  LAW --> WB
-  WB --> U[Unhealthy = running AND<br/>last heartbeat > 10 min]
+  ARG[(Azure Resource Graph<br/>power state + Resource Health<br/>start/stop events)] -- "arg()" --> LAW
+  LAW --> WB[Workbook]
+  WB --> U[Unhealthy = running > grace AND<br/>last heartbeat > threshold]
 ```
-
 ## Usage
 
 ```powershell
@@ -52,7 +62,7 @@ cd AIApps\AzLabBuilder
 | Key | Action |
 |---|---|
 | `1` | Deploy the AMA Heartbeat lab. Prompts for region, RG, VM count, prefix and threshold, then the SKU, then a plan and cost estimate before anything is deployed |
-| `H` | Health check in the console: power state + last AMA heartbeat. Optional watch mode refreshes every 60 s; press `Q` to stop |
+| `H` | Health check in the console, using the same startup-aware logic as the dashboard (Healthy / Unhealthy / Starting / Deallocated). Optional watch mode refreshes every 60 s; press `Q` to stop |
 | `D` | Open the workbook in the Azure portal |
 | `R` | Delete a lab. You must type the RG name to confirm |
 | `A` | Re-authenticate or switch subscription |
@@ -66,11 +76,11 @@ cd AIApps\AzLabBuilder
 
 ## Notes
 
-- The first heartbeats arrive about 5–10 minutes after the agent is installed. Until then, every VM shows as **Unhealthy**.
+- The first heartbeats arrive about 5–10 minutes after the agent is installed. VMs show as **Starting** during the grace period; if the agent takes longer than that, they show as **Unhealthy** until the first heartbeat arrives.
 - The VMs have no public IP. The subnet uses `defaultOutboundAccess: true`, so AMA can still reach Azure Monitor. That's fine for a lab, but use NAT Gateway or Firewall in production.
 - The admin user is `labadmin`. A random password is generated and can be shown once after deployment. To access a VM, use Serial Console or Bastion.
 - Cost: compute costs about 2.3 USD per day for 10 × `Standard_B2ats_v2` in Sweden Central, plus disks and minimal log ingestion. Remove the lab with `R` when you're done.
-- The `arg("")` cross-service query in Log Analytics is in preview. It doesn't support `mv-expand`, so each count box uses its own single-row query.
+- The `arg("")` cross-service query in Log Analytics is in preview and transfers at most 1,000 rows. The queries therefore aggregate inside Resource Graph (for example, one packed event list per VM), so up to about 1,000 VMs per scope are supported. Each count box uses its own single-row query.
 
 ## Structure
 
