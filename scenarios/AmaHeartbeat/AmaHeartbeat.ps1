@@ -27,128 +27,181 @@ function New-CountTile {
 
 function Get-AmaHeartbeatKql {
     <#
-      Returns the dashboard KQL (Log Analytics, using arg("") for ARG data - no extra ingestion).
-      Workbook placeholders: {ThresholdMin}, {StartupGraceMin}, {ResourceGroup}, {TimeRange:start}.
-      Startup = latest Resource Health "VM started/allocated/restarted" annotation (healthresourcechanges,
-      healthresources) or the VM creation time. A running VM is only Unhealthy after the grace period.
+      Returns the dashboard KQL (Log Analytics, reads ARG via arg("") - no extra ingestion). Built for 40k+ VMs:
+      arg() transfers max. 1000 rows, so ARG data is either aggregated inside Resource Graph or packed into
+      a few rows with make_list() and expanded locally.
+      Workbook placeholders: {Subscription}, {ResourceGroup}, {ThresholdMin}, {StartupGraceMin}, {TimeRange:start}.
     #>
-    param([Parameter(Mandatory)][string]$SubscriptionId)
 
-    $boot = "'VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed'"
+    # Resource Health annotations: power-on, restart (VM stays on) and power-off
+    $start = "'VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated'"
+    $restart = "'VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed'"
     $off = "'VirtualMachineDeallocationInitiated','VirtualMachineStopInitiatedByControlPlane','VirtualMachineStoppedInternally','VirtualMachinePreempted'"
-    $scope = "| where subscriptionId == '$SubscriptionId'`n    | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'"
 
-    $vms = @"
+    $tokens = @{
+        '__SCOPE__'   = "| where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'`n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'"
+        '__HBSCOPE__' = "| where Category == 'Azure Monitor Agent' and _ResourceId has '/providers/microsoft.compute/virtualmachines/'`n    | where '{Subscription}' == '*' or _ResourceId startswith strcat('/subscriptions/', '{Subscription}', '/')`n    | where '{ResourceGroup}' == '*' or _ResourceId contains strcat('/resourcegroups/', '{ResourceGroup}', '/')"
+        '__START__'   = $start
+        '__BOOT__'    = "$start,$restart"
+        '__OFF__'     = $off
+    }
+    $expand = { param([string]$Kql) foreach ($k in $tokens.Keys) { $Kql = $Kql.Replace($k, $tokens[$k]) }; $Kql }
+
+    # Current state per VM. All VMs are packed into one row inside ARG (P = power, N = created within grace).
+    $state = & $expand @'
 let T = {ThresholdMin}m;
 let Grace = {StartupGraceMin}m;
-let vms = arg("").Resources
-    | where type =~ 'microsoft.compute/virtualmachines'
-    $scope
-    | project VmId = tolower(id), VM = name, ResourceGroup = resourceGroup, Size = tostring(properties.hardwareProfile.vmSize),
-              PowerState = tostring(properties.extended.instanceView.powerState.code), Created = todatetime(properties.timeCreated);
-"@
-
-    # Current state per VM: power state, last startup, last AMA heartbeat
-    $state = $vms + @"
-
-let bootChanges = arg("").healthresourcechanges
-    $scope
-    | where tostring(properties.targetResourceType) =~ 'microsoft.resourcehealth/resourceannotations'
-    | where tostring(properties.changes['properties.annotationName'].newValue) in ($boot)
-    | summarize LastBoot = max(todatetime(properties.changeAttributes.timestamp)) by Target = tolower(tostring(properties.targetResourceId));
-let bootCurrent = arg("").healthresources
-    | where type =~ 'microsoft.resourcehealth/resourceannotations'
-    $scope
-    | where tostring(properties.annotationName) in ($boot)
-    | project Target = tolower(tostring(properties.targetResourceId)), LastBoot = todatetime(properties.occurredTime);
-let boots = union bootChanges, bootCurrent
-    | extend VmId = tostring(split(Target, '/providers/microsoft.resourcehealth/')[0])
-    | summarize LastBoot = max(LastBoot) by VmId;
+let vms = datatable(k:int)[1]
+    | join kind=inner hint.remote=left (arg("").Resources
+        | where type =~ 'microsoft.compute/virtualmachines'
+        __SCOPE__
+        | extend PS = tostring(properties.extended.instanceView.powerState.code)
+        | extend P = case(PS =~ 'PowerState/running', 'R', PS =~ 'PowerState/deallocated', 'D', PS =~ 'PowerState/stopped', 'S', 'O'),
+                 N = iff(todatetime(properties.timeCreated) > ago({StartupGraceMin}m), '1', '0')
+        | summarize L = make_list(strcat(P, N, id))
+        | extend k = 1) on k
+    | mv-expand L to typeof(string)
+    | extend Id = substring(L, 2)
+    | extend Parts = split(Id, '/')
+    | project VmId = tolower(Id), VM = tostring(Parts[8]), ResourceGroup = tostring(Parts[4]), SubscriptionId = tostring(Parts[2]),
+              Power = case(L startswith 'R', 'Running', L startswith 'D', 'Deallocated', L startswith 'S', 'Stopped', 'Other'),
+              NewVm = substring(L, 1, 1) == '1';
+// Any start/restart within the grace period (changes + current annotation), packed into one row
+let boots = datatable(k:int)[1]
+    | join kind=inner hint.remote=left (arg("").healthresourcechanges
+        __SCOPE__
+        | where tostring(properties.targetResourceType) =~ 'microsoft.resourcehealth/resourceannotations'
+        | where tostring(properties.changes['properties.annotationName'].newValue) in (__BOOT__)
+        | extend Ts = todatetime(properties.changeAttributes.timestamp)
+        | where Ts > ago({StartupGraceMin}m)
+        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))
+        | extend k = 1) on k
+    | mv-expand L to typeof(string)
+    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(tostring(split(L, '|')[1]), '/providers/microsoft.resourcehealth/')[0]);
+let bootsNow = datatable(k:int)[1]
+    | join kind=inner hint.remote=left (arg("").healthresources
+        | where type =~ 'microsoft.resourcehealth/resourceannotations'
+        __SCOPE__
+        | where tostring(properties.annotationName) in (__BOOT__)
+        | extend Ts = todatetime(properties.occurredTime)
+        | where Ts > ago({StartupGraceMin}m)
+        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))
+        | extend k = 1) on k
+    | mv-expand L to typeof(string)
+    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(L, '|')[1]);
+let recentBoot = union boots, bootsNow | summarize LastBoot = max(LastBoot) by VmId;
 let lastHb = Heartbeat
     | where TimeGenerated > ago(1d)
-    | where Category == 'Azure Monitor Agent'
+    __HBSCOPE__
     | summarize LastHeartbeat = max(TimeGenerated) by VmId = tolower(_ResourceId);
 let state = vms
-    | join kind=leftouter boots on VmId
+    | join kind=leftouter recentBoot on VmId
     | join kind=leftouter lastHb on VmId
-    | extend LastBoot = iff(isnull(LastBoot) or Created > LastBoot, Created, LastBoot)
-    | extend Power = case(PowerState =~ 'PowerState/running', 'Running', PowerState =~ 'PowerState/deallocated', 'Deallocated',
-                          PowerState =~ 'PowerState/stopped', 'Stopped', isempty(PowerState), 'Unknown', replace_string(PowerState, 'PowerState/', ''))
-    | extend UptimeMin = iff(Power == 'Running' and isnotnull(LastBoot), round((now() - LastBoot) / 1m, 1), real(null))
+    | extend InGrace = NewVm or isnotnull(LastBoot)
     | extend MinutesSince = iff(isnull(LastHeartbeat), real(null), round((now() - LastHeartbeat) / 1m, 1))
     | extend Health = case(Power != 'Running', Power,
-                           isnotnull(LastBoot) and LastBoot > ago(Grace), 'Starting',
-                           isnull(LastHeartbeat) or LastHeartbeat < ago(T), 'Unhealthy', 'Healthy')
-    | extend Detail = case(Health == 'Starting', strcat('Started ', tostring(UptimeMin), ' min ago (startup grace)'),
+                           isnotnull(LastHeartbeat) and LastHeartbeat >= ago(T), 'Healthy',
+                           InGrace, 'Starting', 'Unhealthy')
+    | extend Detail = case(Health == 'Starting', 'Started within the grace period, waiting for the first heartbeat',
                            Power != 'Running', strcat('VM is ', tolower(Power)),
-                           isnull(LastHeartbeat), strcat('Up ', tostring(UptimeMin), ' min, no AMA heartbeat in 24h'),
-                           strcat('Up ', tostring(UptimeMin), ' min, last heartbeat ', tostring(MinutesSince), ' min ago'))
-    | project VmId, VM, ResourceGroup, Size, Power, Health, LastBoot, UptimeMin, LastHeartbeat, MinutesSince, Detail;
-"@
+                           isnull(LastHeartbeat), 'Running, no AMA heartbeat in 24h',
+                           strcat('Running, last heartbeat ', tostring(MinutesSince), ' min ago'))
+    | project VmId, VM, SubscriptionId, ResourceGroup, Power, Health, LastBoot, LastHeartbeat, MinutesSince, Detail;
+'@
 
-    # Per-bin (size = heartbeat threshold) state from Resource Health power events + AMA heartbeats
-    $timeline = $vms + @"
-
-let wStart = bin(todatetime('{TimeRange:start}'), T);
-let wEnd = bin(now(), T);
-let bins = range BinStart from wStart to wEnd - T step T | extend k = 1;
-// Power events inside the window only; state is inferred backwards from the current power state.
-// arg() transfers at most 1000 rows -> events are packed into one list per VM inside Resource Graph and expanded locally
-let events = datatable(k:int)[1]
-    | join kind=inner hint.remote=left (arg("").healthresourcechanges
-        $scope
-        | where tostring(properties.targetResourceType) =~ 'microsoft.resourcehealth/resourceannotations'
-        | extend A = tostring(properties.changes['properties.annotationName'].newValue)
-        | where A in ($boot) or A in ($off)
-        | extend VmId = tostring(split(tolower(tostring(properties.targetResourceId)), '/providers/microsoft.resourcehealth/')[0]),
-                 Ts = todatetime(properties.changeAttributes.timestamp)
-        | where Ts >= todatetime('{TimeRange:start}') - {StartupGraceMin}m - {ThresholdMin}m
-        | extend E = strcat(iff(A in ($boot), '1', '0'), '|', tostring(Ts))
-        | summarize Ev = make_list(E) by VmId
+    # Aggregated history - no per-VM rows. Running(t) = RunningNow - (power-ons after t) + (power-offs after t);
+    # all VMs(t) = VMs now - creations after t + deletions after t (ARG resourcechanges, 14 days).
+    $timeline = & $expand @'
+let Grace = {StartupGraceMin};
+let wStart = todatetime('{TimeRange:start}');
+// Bucket size: threshold, widened for long ranges (max. ~300 points)
+let Bk = max_of({ThresholdMin}, toint(ceiling((now() - wStart) / 1m / 300.0)));
+let nowB = tolong(now()) / 600000000 / Bk;
+let firstB = tolong(wStart) / 600000000 / Bk;
+let m2000 = tolong(datetime(2000-01-01)) / 600000000;
+let current = datatable(k:int)[1]
+    | join kind=inner hint.remote=left (arg("").Resources
+        | where type =~ 'microsoft.compute/virtualmachines'
+        __SCOPE__
+        | summarize RunningNow = sum(iff(tostring(properties.extended.instanceView.powerState.code) =~ 'PowerState/running', 1, 0)), TotalNow = count()
         | extend k = 1) on k
-    | mv-expand Ev to typeof(string)
-    | project VmId, IsBoot = toint(substring(Ev, 0, 1)), Ts = todatetime(substring(Ev, 2));
-let hb = Heartbeat
-    | where TimeGenerated >= wStart
-    | where Category == 'Azure Monitor Agent'
-    | summarize by VmId = tolower(_ResourceId), BinStart = bin(TimeGenerated, T)
-    | extend HasHb = 1;
-bins
-| join kind=inner hint.remote=left (vms | project VmId, PowerState, Created | extend k = 1) on k
-| extend BinEnd = BinStart + T
-| join kind=leftouter hint.remote=left events on VmId
-| summarize LastBootTs = max(iff(IsBoot == 1 and Ts < BinEnd, Ts, datetime(null))),
-            NextBootTs = min(iff(IsBoot == 1 and Ts >= BinEnd, Ts, datetime(null))),
-            NextOffTs = min(iff(IsBoot == 0 and Ts >= BinEnd, Ts, datetime(null)))
-            by BinStart, BinEnd, VmId, PowerState, Created
-| extend Exists = isnull(Created) or Created < BinEnd
-| extend LastBootTs = iff(isnotnull(Created) and Created < BinEnd and (isnull(LastBootTs) or Created > LastBootTs), Created, LastBootTs)
-// Next power event after the bin tells the state during the bin (off event -> was running); none -> current state
-| extend Running = case(not(Exists), false,
-                        isnotnull(NextBootTs) or isnotnull(NextOffTs), coalesce(NextOffTs, datetime(2999-01-01)) < coalesce(NextBootTs, datetime(2999-01-01)),
-                        PowerState =~ 'PowerState/running')
-| extend Eligible = Running and (isnull(LastBootTs) or LastBootTs <= BinEnd - Grace)
-| join kind=leftouter hb on VmId, BinStart
-| extend HasHb = coalesce(HasHb, 0)
-| summarize Running = sum(iff(Running, 1, 0)),
-            Healthy = sum(iff(Eligible and HasHb == 1, 1, 0)),
-            Unhealthy = sum(iff(Eligible and HasHb == 0, 1, 0)),
-            Starting = sum(iff(Running and not(Eligible), 1, 0)),
-            Deallocated = sum(iff(Exists and not(Running), 1, 0))
-            by TimeGenerated = BinEnd
+    | project k, RunningNow, TotalNow;
+// Power-state changes + create/delete from ARG change history (14 days), packed per day as one number per event:
+// E = VM hash * 100000 + minute of day * 16 + NewRun * 8 + PrevRun * 4 + (1 = create, 2 = delete).
+// Only events touching the running state are sent; an unknown previous state is treated as unchanged.
+let ev = datatable(k:int)[1]
+    | join kind=inner hint.remote=left (arg("").resourcechanges
+        __SCOPE__
+        | where tostring(properties.targetResourceType) =~ 'microsoft.compute/virtualmachines'
+        | extend C = tostring(properties.changeType), Ts = todatetime(properties.changeAttributes.timestamp),
+                 NewP = tostring(properties.changes['properties.extended.instanceView.powerState.code'].newValue),
+                 PrevP = tostring(properties.changes['properties.extended.instanceView.powerState.code'].previousValue)
+        | where Ts >= todatetime('{TimeRange:start}') - {StartupGraceMin}m - {ThresholdMin}m
+        | extend Life = case(C == 'Create', 1, C == 'Delete', 2, 0)
+        | extend NewRun = iff(NewP =~ 'PowerState/running', 1, 0)
+        | extend PrevRun = case(Life == 1, 0, isempty(PrevP), NewRun, PrevP =~ 'PowerState/running', 1, 0)
+        | where Life > 0 or (isnotempty(NewP) and (NewRun == 1 or PrevRun == 1))
+        | extend M = tolong(Ts) / 600000000
+        | extend D = M / 1440
+        | summarize L = make_list(hash(tolower(tostring(properties.targetResourceId)), 1000000000) * 100000 + (M % 1440) * 16 + NewRun * 8 + PrevRun * 4 + Life) by D
+        | extend k = 1) on k
+    | mv-expand L to typeof(long)
+    | extend Vm = L / 100000, R = L % 100000
+    | project Vm, M = D * 1440 + R / 16, NewRun = iff(R % 16 >= 8, 1, 0), PrevRun = iff(R % 8 >= 4, 1, 0), Life = R % 4
+    // Deleted VMs are no longer running; state before a VM's first event = its previous value
+    | extend NewRun = iff(Life == 2, 0, NewRun)
+    | order by Vm asc, M asc
+    | extend Before = iff(prev(Vm) == Vm, prev(NewRun), PrevRun)
+    | project M, Up = iff(NewRun > Before, 1, 0), Down = iff(NewRun < Before, 1, 0), Cr = iff(Life == 1, 1, 0), De = iff(Life == 2, 1, 0);
+let net = ev | summarize NetRun = sum(Up - Down), NetAll = sum(Cr - De) by B = M / Bk;
+// Power-ons count as "Starting" for every bucket that ends within the grace period after them
+let starting = ev
+    | where Up == 1
+    | extend Bs = range(M / Bk, (M + Grace) / Bk - 1, 1)
+    | mv-expand Bs to typeof(long)
+    | summarize Starting = count() by B = Bs;
+let healthy = Heartbeat
+    | where TimeGenerated >= wStart - {ThresholdMin}m
+    __HBSCOPE__
+    | summarize by B = tolong(TimeGenerated) / 600000000 / Bk, _ResourceId
+    | summarize Healthy = count() by B;
+range B from firstB to nowB step 1
+| join kind=leftouter net on B
+| order by B desc
+| extend Cum = row_cumsum(coalesce(NetRun, 0)), CumAll = row_cumsum(coalesce(NetAll, 0))
+| extend AfterRun = Cum - coalesce(NetRun, 0), AfterAll = CumAll - coalesce(NetAll, 0)
+| where B < nowB
+| extend k = 1
+| join kind=inner current on k
+| join kind=leftouter healthy on B
+| join kind=leftouter starting on B
+| extend Running = max_of(0, RunningNow - AfterRun), All = max_of(0, TotalNow - AfterAll)
+| extend Healthy = min_of(coalesce(Healthy, 0), Running)
+| extend Starting = min_of(coalesce(Starting, 0), Running - Healthy)
+| project TimeGenerated = datetime(2000-01-01) + ((B + 1) * Bk - m2000) * 1m,
+          Running, Healthy, Unhealthy = Running - Healthy - Starting, Starting, Deallocated = max_of(0, All - Running)
 | order by TimeGenerated asc
-"@
+'@
 
     @{
         State    = $state
         Timeline = $timeline
-        Counts   = $state + @"
+        Counts   = $state + @'
 
 state
 | summarize Running = sum(iff(Power == 'Running', 1, 0)), Healthy = sum(iff(Health == 'Healthy', 1, 0)),
             Unhealthy = sum(iff(Health == 'Unhealthy', 1, 0)), Starting = sum(iff(Health == 'Starting', 1, 0)),
             Deallocated = sum(iff(Power == 'Deallocated', 1, 0)), Total = count()
-"@
+'@
+        Groups   = $state + @'
+
+state
+| summarize Total = count(), Running = sum(iff(Power == 'Running', 1, 0)), Healthy = sum(iff(Health == 'Healthy', 1, 0)),
+            Unhealthy = sum(iff(Health == 'Unhealthy', 1, 0)), Starting = sum(iff(Health == 'Starting', 1, 0)),
+            Deallocated = sum(iff(Power == 'Deallocated', 1, 0)) by SubscriptionId, ResourceGroup
+| extend UnhealthyPct = iff(Running == 0, 0.0, round(100.0 * Unhealthy / Running, 1))
+| order by Unhealthy desc, Running desc
+'@
     }
 }
 
@@ -162,27 +215,32 @@ function New-AmaHeartbeatWorkbookJson {
         [int]$StartupGraceMinutes = 10
     )
 
-    $kql = Get-AmaHeartbeatKql -SubscriptionId $SubscriptionId
+    $kql = Get-AmaHeartbeatKql
 
-    # mv-expand is not supported on arg() results -> one single-row query per tile
+    # One single-row query per tile (keeps each tile's colour)
     $tile = { param($Title, $Subtitle, $Column) $kql.Counts + "`n| project Title = '$Title', Subtitle = '$Subtitle', Count = $Column" }
 
-    $timelineQuery = $kql.Timeline + "`n| project TimeGenerated, Running, Healthy, Unhealthy, Starting"
+    $timelineQuery = $kql.Timeline + "`n| project TimeGenerated, Running, Healthy, Unhealthy, Deallocated, Starting"
 
+    # Tiles per VM name are capped - the grid below lists up to 5000
     $unhealthyQuery = $kql.State + @'
 
 state
 | where Health == 'Unhealthy'
+| order by MinutesSince desc nulls first, VM asc
+| take 100
 | project VM, Health, Detail, ResourceGroup
-| order by VM asc
 '@
+
+    $groupsQuery = $kql.Groups + "`n| project ResourceGroup, SubscriptionId, Running, Healthy, Unhealthy, UnhealthyPct, Starting, Deallocated, Total"
 
     $detailQuery = $kql.State + @'
 
 state
-| extend Order = case(Health == 'Unhealthy', 0, Health == 'Starting', 1, Health == 'Healthy', 2, 3)
-| order by Order asc, VM asc
-| project Health, VM, Power, ResourceGroup, Size, LastBoot, UptimeMin, LastHeartbeat, MinutesSince, Detail
+| where Health in ('Unhealthy', 'Starting')
+| order by Health desc, VM asc
+| take 5000
+| project Health, VM, ResourceGroup, SubscriptionId, LastBoot, LastHeartbeat, MinutesSince, Detail
 '@
 
     $laCommon = @{
@@ -225,7 +283,7 @@ state
         @{
             type    = 1
             name    = 'header'
-            content = @{ json = "## AMA Heartbeat Health`nA running VM is **unhealthy** when it has been up longer than the startup grace period (last start from Resource Health) and the Azure Monitor Agent has not sent a heartbeat within the threshold. Freshly started VMs are shown as **Starting**; stopped/deallocated VMs are ignored.`n`n_Source: Azure Resource Graph (power state, Resource Health start/stop events) via ``arg()`` + Log Analytics ``Heartbeat`` table - no additional data is collected. Deployed by AzLabBuilder._" }
+            content = @{ json = "## AMA Heartbeat Health`nA running VM is **healthy** when the Azure Monitor Agent sent a heartbeat within the threshold. Without a heartbeat it is **Starting** during the startup grace period after a start/restart, and **unhealthy** afterwards. Deallocated/stopped VMs are counted separately.`n`n_Source: Azure Resource Graph (power state, change history, Resource Health) via ``arg()`` + Log Analytics ``Heartbeat`` table - no additional data is collected. Aggregated for 40k+ VMs; set Subscription/Resource group to ``*`` for all. Deployed by AzLabBuilder._" }
         }
         @{
             type    = 9
@@ -236,6 +294,7 @@ state
                 queryType    = 0
                 resourceType = 'microsoft.operationalinsights/workspaces'
                 parameters   = @(
+                    @{ id = (& $paramId 'p5'); version = 'KqlParameterItem/1.0'; name = 'Subscription'; label = 'Subscription ID (* = all)'; type = 1; isRequired = $true; value = $SubscriptionId }
                     @{ id = (& $paramId 'p1'); version = 'KqlParameterItem/1.0'; name = 'ThresholdMin'; label = 'Heartbeat threshold (min)'; type = 1; isRequired = $true; value = "$ThresholdMinutes" }
                     @{ id = (& $paramId 'p3'); version = 'KqlParameterItem/1.0'; name = 'StartupGraceMin'; label = 'Startup grace (min)'; type = 1; isRequired = $true; value = "$StartupGraceMinutes" }
                     @{ id = (& $paramId 'p2'); version = 'KqlParameterItem/1.0'; name = 'ResourceGroup'; label = 'Resource group (* = all)'; type = 1; isRequired = $true; value = $ResourceGroupName }
@@ -255,15 +314,15 @@ state
         }
         (& $countTile 'running-count' 'Running' 'VMs in running state' 'Running' 'blue')
         (& $countTile 'healthy-count' 'Healthy' 'AMA heartbeat within {ThresholdMin} min' 'Healthy' 'green')
-        (& $countTile 'unhealthy-count' 'Unhealthy' 'up > {StartupGraceMin} min, no heartbeat > {ThresholdMin} min' 'Unhealthy' 'redBright')
-        (& $countTile 'starting-count' 'Starting' 'started < {StartupGraceMin} min ago' 'Starting' 'gray')
+        (& $countTile 'unhealthy-count' 'Unhealthy' 'past grace, no heartbeat > {ThresholdMin} min' 'Unhealthy' 'redBright')
+        (& $countTile 'starting-count' 'Starting' 'started < {StartupGraceMin} min ago, no heartbeat yet' 'Starting' 'gray')
         (& $countTile 'deallocated-count' 'Deallocated' 'VMs currently deallocated' 'Deallocated' 'purple')
         @{
             type    = 3
             name    = 'health-timeline'
             content = @{
                 version                 = 'KqlItem/1.0'
-                title                   = 'Healthy vs. unhealthy out of running VMs ({ThresholdMin} min buckets)'
+                title                   = 'Running VMs: healthy vs. unhealthy, plus deallocated (bucket = threshold, wider for long ranges)'
                 query                   = $timelineQuery
                 size                    = 0
                 queryType               = 0
@@ -276,6 +335,7 @@ state
                         @{ seriesName = 'Running'; label = 'Running'; color = 'blue' }
                         @{ seriesName = 'Healthy'; label = 'Healthy'; color = 'green' }
                         @{ seriesName = 'Unhealthy'; label = 'Unhealthy'; color = 'redBright' }
+                        @{ seriesName = 'Deallocated'; label = 'Deallocated / stopped'; color = 'purple' }
                         @{ seriesName = 'Starting'; label = 'Starting (grace)'; color = 'gray' }
                     )
                 }
@@ -285,7 +345,7 @@ state
             type    = 3
             name    = 'unhealthy-vms'
             content = $laCommon + @{
-                title              = 'Unhealthy VMs - up > {StartupGraceMin} min, no AMA heartbeat for more than {ThresholdMin} min'
+                title              = 'Unhealthy VMs (top 100) - running, past startup grace, no AMA heartbeat for more than {ThresholdMin} min'
                 query              = $unhealthyQuery
                 size               = 0
                 visualization      = 'tiles'
@@ -303,22 +363,40 @@ state
         }
         @{
             type    = 3
-            name    = 'vm-details'
+            name    = 'groups'
             content = $laCommon + @{
-                title         = 'All VMs - power state, last start and last AMA heartbeat'
-                query         = $detailQuery
+                title         = 'Health grouped by resource group'
+                query         = $groupsQuery
                 size          = 0
                 visualization = 'table'
                 gridSettings  = @{
                     formatters = @(
+                        @{ columnMatch = 'Healthy'; formatter = 4; formatOptions = @{ palette = 'green' } }
+                        @{ columnMatch = 'Unhealthy'; formatter = 4; formatOptions = @{ palette = 'red' } }
+                        @{ columnMatch = 'UnhealthyPct'; formatter = 0; numberFormat = @{ unit = 1; options = @{ style = 'decimal'; maximumFractionDigits = 1 } } }
+                        @{ columnMatch = 'Deallocated'; formatter = 4; formatOptions = @{ palette = 'purple' } }
+                    )
+                    filter        = $true
+                    labelSettings = @(@{ columnId = 'UnhealthyPct'; label = 'Unhealthy % of running' })
+                }
+            }
+        }
+        @{
+            type    = 3
+            name    = 'vm-details'
+            content = $laCommon + @{
+                title         = 'Running VMs that are not healthy (unhealthy + starting, max. 5000 - use the groups table to narrow the scope)'
+                query         = $detailQuery
+                size          = 0
+                visualization = 'table'
+                noDataMessage = 'All running VMs are healthy.'
+                gridSettings  = @{
+                    formatters = @(
                         $healthIcon
-                        @{ columnMatch = 'UptimeMin'; formatter = 0; numberFormat = @{ unit = 0; options = @{ style = 'decimal'; maximumFractionDigits = 1 } } }
                         @{ columnMatch = 'MinutesSince'; formatter = 0; numberFormat = @{ unit = 0; options = @{ style = 'decimal'; maximumFractionDigits = 1 } } }
                     )
-                    labelSettings = @(
-                        @{ columnId = 'UptimeMin'; label = 'Up (min)' }
-                        @{ columnId = 'MinutesSince'; label = 'Heartbeat age (min)' }
-                    )
+                    filter        = $true
+                    labelSettings = @(@{ columnId = 'MinutesSince'; label = 'Heartbeat age (min)' })
                 }
             }
         }
@@ -474,8 +552,8 @@ function Get-AmaHeartbeatHealth {
     $ws = Get-AzOperationalInsightsWorkspace -ResourceGroupName $ResourceGroupName -ErrorAction Stop | Select-Object -First 1
     if (-not $ws) { throw "No Log Analytics workspace found in '$ResourceGroupName'." }
     $subId = (Get-AzContext).Subscription.Id
-    $q = (Get-AmaHeartbeatKql -SubscriptionId $subId).State + "`nstate`n| order by VM asc"
-    $q = $q.Replace('{ThresholdMin}', "$ThresholdMinutes").Replace('{StartupGraceMin}', "$StartupGraceMinutes").Replace('{ResourceGroup}', $ResourceGroupName)
+    $q = (Get-AmaHeartbeatKql).State + "`nstate`n| order by VM asc"
+    $q = $q.Replace('{Subscription}', $subId).Replace('{ThresholdMin}', "$ThresholdMinutes").Replace('{StartupGraceMin}', "$StartupGraceMinutes").Replace('{ResourceGroup}', $ResourceGroupName)
     $res = Invoke-AzOperationalInsightsQuery -WorkspaceId $ws.CustomerId -Query $q -ErrorAction Stop
     if ($res.Error) { throw "Health query failed: $($res.Error.Message)" }
     foreach ($r in $res.Results) {
@@ -483,7 +561,6 @@ function Get-AmaHeartbeatHealth {
             VM            = $r.VM
             PowerState    = $r.Power
             Health        = $r.Health
-            UpMin         = if ($r.UptimeMin) { $r.UptimeMin } else { '-' }
             LastHeartbeat = if ($r.LastHeartbeat) { ([datetime]$r.LastHeartbeat).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') + 'Z' } else { '-' }
             MinutesAgo    = if ($r.MinutesSince) { $r.MinutesSince } else { '-' }
         }
@@ -510,10 +587,12 @@ function Show-AmaHeartbeatHealth {
         Write-Host ('   VMs running : {0} / {1}' -f @($rows | Where-Object PowerState -eq 'Running').Count, $rows.Count) -ForegroundColor Cyan
         Write-Host ('   Healthy     : {0}' -f (& $count 'Healthy')) -ForegroundColor Green
         Write-Host ('   Unhealthy   : {0}' -f $unhealthy) -ForegroundColor $(if ($unhealthy) { 'Red' } else { 'Green' })
-        Write-Host ('   Starting    : {0}  (started < {1} min ago)' -f (& $count 'Starting'), $grace) -ForegroundColor Gray
+        Write-Host ('   Starting    : {0}  (started < {1} min ago, no heartbeat yet)' -f (& $count 'Starting'), $grace) -ForegroundColor Gray
         Write-Host ('   Deallocated : {0}' -f (& $count 'Deallocated')) -ForegroundColor DarkGray
         Write-Host ''
-        Write-LabTable -Rows $rows -Columns @('VM', 'PowerState', 'Health', 'UpMin', 'LastHeartbeat', 'MinutesAgo') -ColorSelector {
+        # Large scopes: list only the VMs that need attention
+        $list = if ($rows.Count -le 50) { $rows } else { @($rows | Where-Object Health -in 'Unhealthy', 'Starting' | Select-Object -First 50) }
+        Write-LabTable -Rows $list -Columns @('VM', 'PowerState', 'Health', 'LastHeartbeat', 'MinutesAgo') -ColorSelector {
             param($r) switch ($r.Health) { 'Unhealthy' { 'Red' } 'Healthy' { 'Green' } 'Starting' { 'Yellow' } default { 'DarkGray' } }
         }
         if (-not $watch) { break }

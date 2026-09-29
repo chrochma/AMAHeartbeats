@@ -22,27 +22,36 @@ A PowerShell console (TUI) tool for deploying ready-to-use Azure lab scenarios. 
 
 ### Dashboard
 
-A running VM only counts as **unhealthy** after it has been up for longer than the **startup grace** period (default 10 min) **and** has sent no AMA heartbeat within the **threshold** (default 10 min). The VM's start time comes from Azure **Resource Health** start/allocate/restart events (or its creation time). A freshly started VM shows as **Starting** instead, so a VM that is still booting doesn't cause noise.
+The dashboard scales to **40,000 VMs**. Instead of listing every VM, it groups them into lines and boxes.
+
+A running VM only counts as **unhealthy** after it has been up for longer than the **startup grace** period (default 10 min) **and** has sent no AMA heartbeat within the **threshold** (default 10 min). The VM's start time comes from Azure **Resource Health** start/allocate/restart events (or its creation time). A freshly started VM without a heartbeat shows as **Starting**, so a VM that is still booting doesn't cause noise.
 
 | Box | Meaning |
 |---|---|
 | **Running** | VMs in the `running` power state |
-| **Healthy** | Running, past the grace period, with an AMA heartbeat within the threshold |
+| **Healthy** | Running, with an AMA heartbeat within the threshold |
 | **Unhealthy** | Running for longer than the grace period, with **no AMA heartbeat for more than the threshold** |
-| **Starting** | Started less than the grace period ago; heartbeats aren't expected yet |
-| **Deallocated** | VMs that are currently deallocated |
-| **Healthy vs. unhealthy chart** | Line chart in threshold-sized buckets: **Running** (blue), **Healthy** (green), **Unhealthy** (red) and Starting (gray). Shows how many of the running VMs were actually unhealthy at each point in time |
-| **Unhealthy VMs** (tiles) | One red tile **per VM name**, showing uptime and minutes since the last heartbeat |
-| Detail table | Every VM with health, power state, last start, uptime and last heartbeat |
+| **Starting** | Started less than the grace period ago, with no heartbeat yet |
+| **Deallocated** | VMs that are currently deallocated or stopped |
+| **Health chart** | One line per group: **Running** (blue), **Healthy** (green), **Unhealthy** (red), **Deallocated** (gray) and Starting (purple). Buckets are the threshold size and widen for long ranges (max. about 300 points, e.g. 34 min for 7 days) |
+| **Unhealthy VMs** (tiles) | Top 100 unhealthy VMs, longest silent first |
+| **Groups** table | Per subscription and resource group: Total, Running, Healthy, Unhealthy, Unhealthy %, Starting, Deallocated. The worst groups are listed first |
+| Not-healthy grid | Unhealthy and starting VMs (max. 5,000), with last boot and last heartbeat |
 
 Workbook parameters:
+- `Subscription` (default: the lab subscription; `*` = all subscriptions visible to you)
 - `Heartbeat threshold (min)`
 - `Startup grace (min)`
-- `Resource group` (default: the lab RG; `*` = the whole subscription)
+- `Resource group` (default: the lab RG; `*` = all)
 - `Chart time range` (1 h to 14 days)
 
-**No extra data is collected.** Power state and start/stop history come from Azure Resource Graph (`Resources`, `healthresources`, `healthresourcechanges`), which is free and holds 14 days of history. Log Analytics reads them through `arg("")`, and the only table used is the `Heartbeat` table that AMA writes anyway.
+**No extra data is collected.** Power state, start events and power history come from Azure Resource Graph (`Resources`, `healthresources`, `healthresourcechanges`, `resourcechanges`), which is free and holds 14 days of history. Log Analytics reads them through `arg("")`, and the only table used is the `Heartbeat` table that AMA writes anyway. The workspace must receive heartbeats from every VM in scope.
 
+**How it scales.** `arg("")` transfers at most 1,000 rows, so no query pulls one row per VM out of Resource Graph:
+- **Current state:** all VMs are packed into a few list rows inside Resource Graph and expanded in Log Analytics.
+- **Chart:** power-state changes from `resourcechanges` are replayed backwards from the current running count, so there's no VM × time grid. Healthy per bucket is the distinct count of VMs with a heartbeat, capped at Running.
+
+In a test with about 22,000 VMs, each box loaded in about 8 s, a 24 h chart in about 11 s, and a 7-day chart in about 18 s.
 ```mermaid
 flowchart LR
   VM[10x Linux VM + AMA] -- Heartbeat --> LAW[(Log Analytics)]
@@ -62,7 +71,7 @@ cd AIApps\AzLabBuilder
 | Key | Action |
 |---|---|
 | `1` | Deploy the AMA Heartbeat lab. Prompts for region, RG, VM count, prefix and threshold, then the SKU, then a plan and cost estimate before anything is deployed |
-| `H` | Health check in the console, using the same startup-aware logic as the dashboard (Healthy / Unhealthy / Starting / Deallocated). Optional watch mode refreshes every 60 s; press `Q` to stop |
+| `H` | Health check in the console, using the same startup-aware logic as the dashboard (Healthy / Unhealthy / Starting / Deallocated). For large scopes it lists only the first 50 VMs that need attention. Optional watch mode refreshes every 60 s; press `Q` to stop |
 | `D` | Open the workbook in the Azure portal |
 | `R` | Delete a lab. You must type the RG name to confirm |
 | `A` | Re-authenticate or switch subscription |
@@ -80,7 +89,8 @@ cd AIApps\AzLabBuilder
 - The VMs have no public IP. The subnet uses `defaultOutboundAccess: true`, so AMA can still reach Azure Monitor. That's fine for a lab, but use NAT Gateway or Firewall in production.
 - The admin user is `labadmin`. A random password is generated and can be shown once after deployment. To access a VM, use Serial Console or Bastion.
 - Cost: compute costs about 2.3 USD per day for 10 × `Standard_B2ats_v2` in Sweden Central, plus disks and minimal log ingestion. Remove the lab with `R` when you're done.
-- The `arg("")` cross-service query in Log Analytics is in preview and transfers at most 1,000 rows. The queries therefore aggregate inside Resource Graph (for example, one packed event list per VM), so up to about 1,000 VMs per scope are supported. Each count box uses its own single-row query.
+- The `arg("")` cross-service query in Log Analytics is in preview.
+- Chart limitations: a VM deleted while running, with no power-off event, counts as off from its last power change. Running counts before VMs were created or deleted are approximate.
 
 ## Structure
 
