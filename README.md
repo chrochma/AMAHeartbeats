@@ -1,9 +1,32 @@
-![AzLabBuilder banner](assets/azlabbuilder-banner.svg)
+![AMA Heartbeats banner](assets/azlabbuilder-banner.svg)
+
+# AMA Heartbeats
+
+This repo contains an Azure Monitor **workbook** that shows which running VMs have stopped sending Azure Monitor Agent (AMA) heartbeats. It's startup-aware, scales to 40,000 VMs, and needs **no additional data**. It also contains **AzLabBuilder**, a PowerShell TUI that deploys a lab to try the workbook out, including a simulated AMA outage.
+
+## Deploy the dashboard only
+
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fchrochma%2FAMAHeartbeats%2Fmain%2Fworkbook%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2Fchrochma%2FAMAHeartbeats%2Fmain%2Fworkbook%2FcreateUiDefinition.json)
+
+1. Select **Deploy to Azure**, then choose a subscription and resource group for the workbook.
+2. Pick your **existing Log Analytics workspace** that receives the AMA heartbeats.
+3. Select Create. Open it under **Azure Monitor > Workbooks**. You can switch the workspace later with the *Log Analytics workspace* parameter.
+
+**Copy and paste instead:** in **Azure Monitor > Workbooks > New > Advanced Editor (`</>`) > Gallery Template**, paste the contents of [`workbook/workbook.json`](workbook/workbook.json) and select Apply. Then pick the workspace in the parameter bar. You can also paste [`workbook/azuredeploy.json`](workbook/azuredeploy.json) into **Deploy a custom template > Build your own template in the editor**.
+
+**Data requirements:**
+- **Log Analytics:** the workbook only reads the **`Heartbeat`** table. AMA writes it automatically to every workspace that is a destination of a DCR associated with the VM, whatever the DCR collects. A DCR that only collects a rare event, such as `Application!*[System[(EventID=11724)]]`, is therefore enough. This was validated against such a workspace with Windows VMs.
+- **Azure Resource Graph (free):** power state, start events and 14 days of power history come from ARG via `arg("")`.
+- **Scope:** Azure VMs (`microsoft.compute/virtualmachines`), both Windows and Linux. Arc servers aren't included.
+- **Permissions for viewers:** *Reader* on the workspace, and *Reader* on the VMs so Resource Graph returns their power state.
+
+To regenerate the three files after changing the KQL or layout, run [`workbook/Build-Workbook.ps1`](workbook/Build-Workbook.ps1).
+
+---
 
 # AzLabBuilder
 
 A PowerShell console (TUI) tool for deploying ready-to-use Azure lab scenarios. It checks your Azure sign-in first, finds the cheapest VM size you can actually use, deploys the lab with one ARM deployment, and shows you the result.
-
 ## Features
 
 - **Auth check:** if you already have an Az context, the tool tests that the token still works against ARM. You can then *continue*, *re-authenticate* or *switch subscription*. If there's no usable context, it asks you to sign in first. Device code sign-in is supported.
@@ -39,10 +62,11 @@ A running VM only counts as **unhealthy** after it has been up for longer than t
 | Not-healthy grid | Unhealthy and starting VMs (max. 5,000), with last boot and last heartbeat |
 
 Workbook parameters:
-- `Subscription` (default: the lab subscription; `*` = all subscriptions visible to you)
+- `Log Analytics workspace` (picker; standalone deployment: the selected workspace)
+- `Subscription` (default: the lab subscription, `*` for the standalone workbook; `*` = all subscriptions visible to you)
 - `Heartbeat threshold (min)`
 - `Startup grace (min)`
-- `Resource group` (default: the lab RG; `*` = all)
+- `Resource group` (default: the lab RG, `*` for the standalone workbook; `*` = all)
 - `Chart time range` (1 h to 14 days)
 
 **No extra data is collected.** Power state, start events and power history come from Azure Resource Graph (`Resources`, `healthresources`, `healthresourcechanges`, `resourcechanges`), which is free and holds 14 days of history. Log Analytics reads them through `arg("")`, and the only table used is the `Heartbeat` table that AMA writes anyway. The workspace must receive heartbeats from every VM in scope.
@@ -63,7 +87,7 @@ flowchart LR
 ## Usage
 
 ```powershell
-cd AIApps\AzLabBuilder
+cd AMAHeartbeats
 .\AzLabBuilder.ps1                          # interactive browser sign-in if needed
 .\AzLabBuilder.ps1 -UseDeviceAuthentication # device code sign-in
 ```
@@ -105,13 +129,18 @@ Blocked VMs are tracked by their private IP in the rule, so the tool always show
 ## Structure
 
 ```text
-AzLabBuilder/
+AMAHeartbeats/
 ├── AzLabBuilder.ps1                 # entry point, main menu, scenario registry
 ├── lib/
 │   ├── Tui.ps1                      # console UI helpers
 │   ├── Auth.ps1                     # module check, context validation, sign-in
 │   └── Azure.ps1                    # SKU/price/quota selection, providers, password
-└── scenarios/AmaHeartbeat/
-    ├── AmaHeartbeat.ps1             # deploy, workbook, health check, outage sim, remove
-    └── main.json                    # ARM template (VMs, AMA, DCR, LAW, workbook)
+├── scenarios/AmaHeartbeat/
+│   ├── AmaHeartbeat.ps1             # deploy, workbook, health check, outage sim, remove
+│   └── main.json                    # ARM template (VMs, AMA, DCR, LAW, workbook)
+└── workbook/
+    ├── Build-Workbook.ps1           # generates the three files below from AmaHeartbeat.ps1
+    ├── azuredeploy.json             # ARM template: workbook only, existing workspace
+    ├── createUiDefinition.json      # portal UI with workspace picker (Deploy to Azure)
+    └── workbook.json                # gallery template for copy & paste
 ```

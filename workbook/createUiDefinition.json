@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+  "handler": "Microsoft.Azure.CreateUIDef",
+  "version": "0.1.2-preview",
+  "parameters": {
+    "basics": [
+      {
+        "name": "workspace",
+        "type": "Microsoft.Solutions.ResourceSelector",
+        "label": "Log Analytics workspace",
+        "toolTip": "Workspace that receives the Azure Monitor Agent Heartbeat data of your VMs.",
+        "resourceType": "Microsoft.OperationalInsights/workspaces",
+        "options": {
+          "filter": {
+            "subscription": "all",
+            "location": "all"
+          }
+        }
+      },
+      {
+        "name": "workbookName",
+        "type": "Microsoft.Common.TextBox",
+        "label": "Workbook name",
+        "defaultValue": "AMA Heartbeat Health",
+        "constraints": {
+          "required": true
+        }
+      },
+      {
+        "name": "info",
+        "type": "Microsoft.Common.InfoBox",
+        "options": {
+          "icon": "Info",
+          "text": "Only the workbook is deployed. It reads the existing Heartbeat table and Azure Resource Graph - no data collection is changed."
+        }
+      }
+    ],
+    "steps": [],
+    "outputs": {
+      "workspaceResourceId": "[basics('workspace').id]",
+      "workbookDisplayName": "[basics('workbookName')]",
+      "location": "[location()]"
+    }
+  }
+}

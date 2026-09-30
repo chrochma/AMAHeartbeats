@@ -207,10 +207,11 @@ state
 
 function New-AmaHeartbeatWorkbookJson {
     # Builds the serialized Azure Monitor workbook (dashboard) - reads existing data only (arg() + Heartbeat)
+    # Portable: the workspace is a picker parameter; empty WorkspaceResourceId = user selects it
     param(
-        [Parameter(Mandatory)][string]$SubscriptionId,
-        [Parameter(Mandatory)][string]$WorkspaceResourceId,
-        [Parameter(Mandatory)][string]$ResourceGroupName,
+        [string]$SubscriptionId = '*',
+        [string]$WorkspaceResourceId = '',
+        [string]$ResourceGroupName = '*',
         [int]$ThresholdMinutes = 10,
         [int]$StartupGraceMinutes = 10
     )
@@ -247,7 +248,7 @@ state
         version                 = 'KqlItem/1.0'
         queryType               = 0
         resourceType            = 'microsoft.operationalinsights/workspaces'
-        crossComponentResources = @($WorkspaceResourceId)
+        crossComponentResources = @('{Workspace}')
         timeContext             = @{ durationMs = 86400000 }
     }
     $countTile = {
@@ -283,7 +284,7 @@ state
         @{
             type    = 1
             name    = 'header'
-            content = @{ json = "## AMA Heartbeat Health`nA running VM is **healthy** when the Azure Monitor Agent sent a heartbeat within the threshold. Without a heartbeat it is **Starting** during the startup grace period after a start/restart, and **unhealthy** afterwards. Deallocated/stopped VMs are counted separately.`n`n_Source: Azure Resource Graph (power state, change history, Resource Health) via ``arg()`` + Log Analytics ``Heartbeat`` table - no additional data is collected. Aggregated for 40k+ VMs; set Subscription/Resource group to ``*`` for all. Deployed by AzLabBuilder._" }
+            content = @{ json = "## AMA Heartbeat Health`nA running VM is **healthy** when the Azure Monitor Agent sent a heartbeat within the threshold. Without a heartbeat it is **Starting** during the startup grace period after a start/restart, and **unhealthy** afterwards. Deallocated/stopped VMs are counted separately.`n`n_Source: Azure Resource Graph (power state, change history, Resource Health) via ``arg()`` + Log Analytics ``Heartbeat`` table - no additional data is collected. Aggregated for 40k+ VMs; set Subscription/Resource group to ``*`` for all. github.com/chrochma/AMAHeartbeats_" }
         }
         @{
             type    = 9
@@ -294,6 +295,15 @@ state
                 queryType    = 0
                 resourceType = 'microsoft.operationalinsights/workspaces'
                 parameters   = @(
+                    @{
+                        id = (& $paramId 'p6'); version = 'KqlParameterItem/1.0'; name = 'Workspace'; label = 'Log Analytics workspace'; type = 5; isRequired = $true
+                        value                   = $(if ($WorkspaceResourceId) { $WorkspaceResourceId } else { $null })
+                        query                   = "resources | where type =~ 'microsoft.operationalinsights/workspaces' | project id"
+                        crossComponentResources = @('value::all')
+                        typeSettings            = @{ resourceTypeFilter = @{ 'microsoft.operationalinsights/workspaces' = $true }; additionalResourceOptions = @(); showDefault = $false }
+                        queryType               = 1
+                        resourceType            = 'microsoft.resourcegraph/resources'
+                    }
                     @{ id = (& $paramId 'p5'); version = 'KqlParameterItem/1.0'; name = 'Subscription'; label = 'Subscription ID (* = all)'; type = 1; isRequired = $true; value = $SubscriptionId }
                     @{ id = (& $paramId 'p1'); version = 'KqlParameterItem/1.0'; name = 'ThresholdMin'; label = 'Heartbeat threshold (min)'; type = 1; isRequired = $true; value = "$ThresholdMinutes" }
                     @{ id = (& $paramId 'p3'); version = 'KqlParameterItem/1.0'; name = 'StartupGraceMin'; label = 'Startup grace (min)'; type = 1; isRequired = $true; value = "$StartupGraceMinutes" }
@@ -327,7 +337,7 @@ state
                 size                    = 0
                 queryType               = 0
                 resourceType            = 'microsoft.operationalinsights/workspaces'
-                crossComponentResources = @($WorkspaceResourceId)
+                crossComponentResources = @('{Workspace}')
                 timeContextFromParameter = 'TimeRange'
                 visualization           = 'linechart'
                 chartSettings           = @{
@@ -405,7 +415,7 @@ state
     $workbook = [ordered]@{
         version             = 'Notebook/1.0'
         items               = $items
-        fallbackResourceIds = @($WorkspaceResourceId)
+        fallbackResourceIds = @(if ($WorkspaceResourceId) { $WorkspaceResourceId } else { 'Azure Monitor' })
         '$schema'           = 'https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json'
     }
     return ($workbook | ConvertTo-Json -Depth 30 -Compress)
