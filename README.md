@@ -72,9 +72,19 @@ cd AIApps\AzLabBuilder
 |---|---|
 | `1` | Deploy the AMA Heartbeat lab. Prompts for region, RG, VM count, prefix and threshold, then the SKU, then a plan and cost estimate before anything is deployed |
 | `H` | Health check in the console, using the same startup-aware logic as the dashboard (Healthy / Unhealthy / Starting / Deallocated). For large scopes it lists only the first 50 VMs that need attention. Optional watch mode refreshes every 60 s; press `Q` to stop |
+| `C` | **Simulate an AMA outage.** Asks on how many running VMs, picks them at random and blocks their outbound traffic to the `AzureMonitor` service tag with one NSG deny rule (`AzLabBuilder-AmaCrash`). The VMs keep running but their heartbeats stop, so they turn **Unhealthy** on the dashboard. `R` in the same screen removes the rule and restores all VMs |
 | `D` | Open the workbook in the Azure portal |
 | `R` | Delete a lab. You must type the RG name to confirm |
 | `A` | Re-authenticate or switch subscription |
+
+### Simulating an AMA outage
+
+The outage simulation uses the lab's subnet NSG instead of stopping the agent inside the VM. That makes it fast to start and stop (one NSG update, no Run Command and no guest access), and the VM itself stays healthy. In a test:
+- Heartbeats stopped about **2 min** after the rule was set, so a VM turns Unhealthy after about 2 min + the threshold.
+- Heartbeats resumed about **2–5 min** after the rule was removed.
+- Missed heartbeats are **not** backfilled, so the outage stays visible in the chart.
+
+Blocked VMs are tracked by their private IP in the rule, so the tool always shows the current state. If a blocked VM is deallocated and gets a new IP, restore with `R`.
 
 ## Requirements
 
@@ -102,6 +112,6 @@ AzLabBuilder/
 │   ├── Auth.ps1                     # module check, context validation, sign-in
 │   └── Azure.ps1                    # SKU/price/quota selection, providers, password
 └── scenarios/AmaHeartbeat/
-    ├── AmaHeartbeat.ps1             # deploy, workbook builder, health check, remove
+    ├── AmaHeartbeat.ps1             # deploy, workbook, health check, outage sim, remove
     └── main.json                    # ARM template (VMs, AMA, DCR, LAW, workbook)
 ```

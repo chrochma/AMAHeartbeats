@@ -35,6 +35,7 @@ $scenarios = @(
         Summary   = '10x cheapest Linux VM + AMA + heartbeat health dashboard'
         Deploy    = { Invoke-AmaHeartbeatDeploy }
         Health    = { Show-AmaHeartbeatHealth }
+        Crash     = { Invoke-AmaHeartbeatCrashSim }
         Dashboard = { Open-AmaHeartbeatDashboard }
         Remove    = { Remove-AmaHeartbeatLab }
     }
@@ -74,6 +75,7 @@ while ($true) {
     $menu = [ordered]@{}
     for ($i = 0; $i -lt $scenarios.Count; $i++) { $menu["$($i + 1)"] = 'Deploy: {0} - {1}' -f $scenarios[$i].Name, $scenarios[$i].Summary }
     $menu['H'] = 'Health check (running VMs vs. AMA heartbeat)'
+    $menu['C'] = 'Simulate AMA outage (block heartbeat via NSG) / restore'
     $menu['D'] = 'Open Azure Monitor dashboard (workbook)'
     $menu['R'] = 'Remove a lab'
     $menu['A'] = 'Account: re-authenticate / switch subscription'
@@ -83,6 +85,7 @@ while ($true) {
     switch -Regex ($choice) {
         '^\d+$' { $s = $scenarios[[int]$choice - 1]; Invoke-LabAction -Action $s.Deploy }
         '^H$' { $s = Select-LabScenario -Purpose 'Health check'; if ($s) { Invoke-LabAction -Action $s.Health } }
+        '^C$' { $s = Select-LabScenario -Purpose 'AMA outage'; if ($s) { Invoke-LabAction -Action $s.Crash } }
         '^D$' { $s = Select-LabScenario -Purpose 'Dashboard'; if ($s) { Invoke-LabAction -Action $s.Dashboard } }
         '^R$' { $s = Select-LabScenario -Purpose 'Remove lab'; if ($s) { Invoke-LabAction -Action $s.Remove } }
         '^A$' { Invoke-LabAction -Action { Initialize-LabAuthentication -UseDeviceAuthentication:$UseDeviceAuthentication | Out-Null } }

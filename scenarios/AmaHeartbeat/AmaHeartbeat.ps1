@@ -614,6 +614,79 @@ function Open-AmaHeartbeatDashboard {
     Start-Process $url
 }
 
+$script:AmaHbCrashRule = 'AzLabBuilder-AmaCrash'
+
+function Get-AmaHeartbeatCrashState {
+    # Lab VMs with private IP, power state and whether the NSG rule currently blocks their AMA traffic
+    param([Parameter(Mandatory)][string]$ResourceGroupName)
+    $nsg = Get-AzNetworkSecurityGroup -ResourceGroupName $ResourceGroupName -ErrorAction Stop | Select-Object -First 1
+    if (-not $nsg) { throw "No network security group found in '$ResourceGroupName'." }
+    $rule = $nsg.SecurityRules | Where-Object Name -eq $script:AmaHbCrashRule
+    $blocked = @(if ($rule) { $rule.SourceAddressPrefix })
+    $power = @{}
+    Get-AzVM -ResourceGroupName $ResourceGroupName -Status -ErrorAction Stop | ForEach-Object { $power[$_.Name] = ($_.PowerState -replace '^VM ', '') }
+    $vms = foreach ($nic in Get-AzNetworkInterface -ResourceGroupName $ResourceGroupName -ErrorAction Stop | Where-Object { $_.VirtualMachine }) {
+        $name = ($nic.VirtualMachine.Id -split '/')[-1]
+        $ip = $nic.IpConfigurations[0].PrivateIpAddress
+        [pscustomobject]@{ VM = $name; IP = $ip; PowerState = $power[$name]; AmaBlocked = ($ip -in $blocked) }
+    }
+    [pscustomobject]@{ Nsg = $nsg; Rule = $rule; VMs = @($vms | Sort-Object VM) }
+}
+
+function Set-AmaHeartbeatCrash {
+    # Writes the deny rule (outbound to service tag AzureMonitor) for the given IPs; no IPs = remove the rule
+    param([Parameter(Mandatory)]$Nsg, [string[]]$SourceIps)
+    $SourceIps = @($SourceIps | Where-Object { $_ })
+    if ($Nsg.SecurityRules | Where-Object Name -eq $script:AmaHbCrashRule) {
+        $Nsg = Remove-AzNetworkSecurityRuleConfig -NetworkSecurityGroup $Nsg -Name $script:AmaHbCrashRule
+    }
+    if ($SourceIps) {
+        $Nsg = Add-AzNetworkSecurityRuleConfig -NetworkSecurityGroup $Nsg -Name $script:AmaHbCrashRule `
+            -Description 'AzLabBuilder: simulated AMA outage (blocks heartbeat to Azure Monitor)' `
+            -Direction Outbound -Access Deny -Priority 100 -Protocol '*' `
+            -SourceAddressPrefix @($SourceIps | Where-Object { $_ } | Sort-Object -Unique) -SourcePortRange '*' `
+            -DestinationAddressPrefix 'AzureMonitor' -DestinationPortRange '*'
+    }
+    Set-AzNetworkSecurityGroup -NetworkSecurityGroup $Nsg -ErrorAction Stop | Out-Null
+}
+
+function Invoke-AmaHeartbeatCrashSim {
+    # Simulates an AMA failure: the VM keeps running, but its heartbeat can no longer reach Azure Monitor
+    $rg = Select-AmaHeartbeatLab
+    if (-not $rg) { return }
+    while ($true) {
+        Write-LabSection -Title "Simulate AMA outage in '$rg'"
+        Write-LabStatus -Level Step -Message 'Reading VMs and NSG ...'
+        $state = Get-AmaHeartbeatCrashState -ResourceGroupName $rg
+        Write-LabTable -Rows $state.VMs -Columns @('VM', 'IP', 'PowerState', 'AmaBlocked') -ColorSelector {
+            param($r) if ($r.AmaBlocked) { 'Red' } elseif ($r.PowerState -eq 'running') { 'Green' } else { 'DarkGray' }
+        }
+        $blocked = @($state.VMs | Where-Object AmaBlocked)
+        $candidates = @($state.VMs | Where-Object { -not $_.AmaBlocked -and $_.PowerState -eq 'running' })
+        Write-Host ''
+        Write-Host ('   Blocked: {0}   Running and not blocked: {1}' -f $blocked.Count, $candidates.Count) -ForegroundColor Cyan
+        Write-Host '   [S] Start outage on more VMs   [R] Restore all VMs   [B] Back'
+        switch -Regex ((Read-Host '  Choice').Trim()) {
+            '^[sS]$' {
+                if ($candidates.Count -eq 0) { Write-LabStatus -Level Warn -Message 'No running VM left to block.'; continue }
+                $n = [int](Read-LabValue -Prompt "On how many VMs (1-$($candidates.Count))" -Default '1' -Pattern '^\d+$' -PatternHint 'Enter a number.')
+                if ($n -lt 1 -or $n -gt $candidates.Count) { Write-LabStatus -Level Warn -Message 'Out of range.'; continue }
+                $pick = @($candidates | Get-Random -Count $n)
+                Write-LabStatus -Level Step -Message ('Blocking AMA on: {0}' -f (($pick.VM | Sort-Object) -join ', '))
+                Set-AmaHeartbeatCrash -Nsg $state.Nsg -SourceIps (@($blocked.IP) + @($pick.IP))
+                Write-LabStatus -Level Ok -Message 'NSG rule set. Heartbeats stop within ~2 min; VMs show as Unhealthy once the threshold has passed.'
+            }
+            '^[rR]$' {
+                if (-not $state.Rule) { Write-LabStatus -Level Info -Message 'No outage active.'; continue }
+                Write-LabStatus -Level Step -Message 'Removing NSG rule ...'
+                Set-AmaHeartbeatCrash -Nsg $state.Nsg -SourceIps @()
+                Write-LabStatus -Level Ok -Message 'Restored. Heartbeats resume within ~2-5 min.'
+            }
+            default { return }
+        }
+    }
+}
+
 function Remove-AmaHeartbeatLab {
     $rg = Select-AmaHeartbeatLab
     if (-not $rg) { return }
