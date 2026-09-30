@@ -669,11 +669,12 @@ function Invoke-AmaHeartbeatCrashSim {
         switch -Regex ((Read-Host '  Choice').Trim()) {
             '^[sS]$' {
                 if ($candidates.Count -eq 0) { Write-LabStatus -Level Warn -Message 'No running VM left to block.'; continue }
-                $n = [int](Read-LabValue -Prompt "On how many VMs (1-$($candidates.Count))" -Default '1' -Pattern '^\d+$' -PatternHint 'Enter a number.')
+                $n = [int](Read-LabValue -Prompt "On how many VMs (1-$($candidates.Count))" -Default '1' -Pattern '^\d+$' -PatternHint 'Enter a single number, e.g. 26.')
                 if ($n -lt 1 -or $n -gt $candidates.Count) { Write-LabStatus -Level Warn -Message 'Out of range.'; continue }
                 $pick = @($candidates | Get-Random -Count $n)
-                Write-LabStatus -Level Step -Message ('Blocking AMA on: {0}' -f (($pick.VM | Sort-Object) -join ', '))
-                Set-AmaHeartbeatCrash -Nsg $state.Nsg -SourceIps (@($blocked.IP) + @($pick.IP))
+                Write-LabStatus -Level Step -Message ('Blocking AMA on: {0}' -f (($pick | ForEach-Object VM | Sort-Object) -join ', '))
+                # ForEach-Object instead of .IP: member access on an empty array fails under StrictMode
+                Set-AmaHeartbeatCrash -Nsg $state.Nsg -SourceIps @(@($blocked) + @($pick) | ForEach-Object IP)
                 Write-LabStatus -Level Ok -Message 'NSG rule set. Heartbeats stop within ~2 min; VMs show as Unhealthy once the threshold has passed.'
             }
             '^[rR]$' {
