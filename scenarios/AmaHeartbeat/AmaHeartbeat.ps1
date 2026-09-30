@@ -30,7 +30,8 @@ function Get-AmaHeartbeatKql {
       Returns the dashboard KQL (Log Analytics, reads ARG via arg("") - no extra ingestion). Built for 40k+ VMs:
       arg() transfers max. 1000 rows, so ARG data is either aggregated inside Resource Graph or packed into
       a few rows with make_list() and expanded locally.
-      Workbook placeholders: {Subscription}, {ResourceGroup}, {ThresholdMin}, {StartupGraceMin}, {TimeRange:start}.
+      Workbook placeholders: {Subscription}, {ResourceGroup}, {ThresholdMin}, {StartupGraceMin}, {ChartHours}.
+    No {TimeRange:start}: the portal renders it in the browser locale (e.g. 30.09.2026 14:05), which todatetime() can't parse.
     #>
 
     # Resource Health annotations: power-on, restart (VM stays on) and power-off
@@ -113,7 +114,7 @@ let state = vms
     # all VMs(t) = VMs now - creations after t + deletions after t (ARG resourcechanges, 14 days).
     $timeline = & $expand @'
 let Grace = {StartupGraceMin};
-let wStart = todatetime('{TimeRange:start}');
+let wStart = now() - {ChartHours}h;
 // Bucket size: threshold, widened for long ranges (max. ~300 points)
 let Bk = max_of({ThresholdMin}, toint(ceiling((now() - wStart) / 1m / 300.0)));
 let nowB = tolong(now()) / 600000000 / Bk;
@@ -136,7 +137,7 @@ let ev = datatable(k:int)[1]
         | extend C = tostring(properties.changeType), Ts = todatetime(properties.changeAttributes.timestamp),
                  NewP = tostring(properties.changes['properties.extended.instanceView.powerState.code'].newValue),
                  PrevP = tostring(properties.changes['properties.extended.instanceView.powerState.code'].previousValue)
-        | where Ts >= todatetime('{TimeRange:start}') - {StartupGraceMin}m - {ThresholdMin}m
+        | where Ts >= ago({ChartHours}h) - {StartupGraceMin}m - {ThresholdMin}m
         | extend Life = case(C == 'Create', 1, C == 'Delete', 2, 0)
         | extend NewRun = iff(NewP =~ 'PowerState/running', 1, 0)
         | extend PrevRun = case(Life == 1, 0, isempty(PrevP), NewRun, PrevP =~ 'PowerState/running', 1, 0)
@@ -309,15 +310,14 @@ state
                     @{ id = (& $paramId 'p3'); version = 'KqlParameterItem/1.0'; name = 'StartupGraceMin'; label = 'Startup grace (min)'; type = 1; isRequired = $true; value = "$StartupGraceMinutes" }
                     @{ id = (& $paramId 'p2'); version = 'KqlParameterItem/1.0'; name = 'ResourceGroup'; label = 'Resource group (* = all)'; type = 1; isRequired = $true; value = $ResourceGroupName }
                     @{
-                        id = (& $paramId 'p4'); version = 'KqlParameterItem/1.0'; name = 'TimeRange'; label = 'Chart time range'; type = 4; isRequired = $true
-                        value        = @{ durationMs = 86400000 }
-                        typeSettings = @{
-                            selectableValues = @(
-                                @{ durationMs = 3600000 }, @{ durationMs = 14400000 }, @{ durationMs = 43200000 },
-                                @{ durationMs = 86400000 }, @{ durationMs = 259200000 }, @{ durationMs = 604800000 }, @{ durationMs = 1209600000 }
-                            )
-                            allowCustom      = $false
-                        }
+                        # Fixed hour values (locale independent) instead of a time range picker
+                        id = (& $paramId 'p7'); version = 'KqlParameterItem/1.0'; name = 'ChartHours'; label = 'Chart time range'; type = 2; isRequired = $true
+                        value        = '24'
+                        jsonData     = (@(
+                                @{ value = '1'; label = 'Last hour' }, @{ value = '4'; label = 'Last 4 hours' }, @{ value = '12'; label = 'Last 12 hours' },
+                                @{ value = '24'; label = 'Last 24 hours' }, @{ value = '72'; label = 'Last 3 days' }, @{ value = '168'; label = 'Last 7 days' }, @{ value = '336'; label = 'Last 14 days' }
+                            ) | ConvertTo-Json -Compress)
+                        typeSettings = @{ additionalResourceOptions = @(); showDefault = $false }
                     }
                 )
             }
@@ -338,7 +338,8 @@ state
                 queryType               = 0
                 resourceType            = 'microsoft.operationalinsights/workspaces'
                 crossComponentResources = @('{Workspace}')
-                timeContextFromParameter = 'TimeRange'
+                # 15 days: covers the longest chart range plus the threshold lookback
+                timeContext             = @{ durationMs = 1296000000 }
                 visualization           = 'linechart'
                 chartSettings           = @{
                     seriesLabelSettings = @(

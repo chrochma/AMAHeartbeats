@@ -67,7 +67,7 @@ Workbook parameters:
 - `Heartbeat threshold (min)`
 - `Startup grace (min)`
 - `Resource group` (default: the lab RG, `*` for the standalone workbook; `*` = all)
-- `Chart time range` (1 h to 14 days)
+- `Chart time range` (1 h to 14 days, fixed dropdown; locale independent, so it also works with German/European date formats in the browser)
 
 **No extra data is collected.** Power state, start events and power history come from Azure Resource Graph (`Resources`, `healthresources`, `healthresourcechanges`, `resourcechanges`), which is free and holds 14 days of history. Log Analytics reads them through `arg("")`, and the only table used is the `Heartbeat` table that AMA writes anyway. The workspace must receive heartbeats from every VM in scope.
 
