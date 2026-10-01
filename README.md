@@ -59,7 +59,6 @@ A running VM only counts as **unhealthy** after it has been up for longer than t
 | **Starting** | Started less than the grace period ago, with no heartbeat yet |
 | **Deallocated** | VMs that are currently deallocated or stopped |
 | **Health chart** | One line per group: **Running** (blue), **Healthy** (green), **Unhealthy** (red), **Deallocated** (gray) and Starting (purple). Buckets are the threshold size and widen for long ranges (max. about 300 points, e.g. 34 min for 7 days) |
-| **Unhealthy VMs** (tiles) | Top 100 unhealthy VMs, longest silent first |
 | **Groups** table | Per subscription and resource group: Total, Running, Healthy, Unhealthy, Unhealthy %, Starting, Deallocated. The worst groups are listed first |
 | Not-healthy grid | Unhealthy and starting VMs (max. 5,000), with last boot and last heartbeat |
 

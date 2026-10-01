@@ -224,16 +224,6 @@ function New-AmaHeartbeatWorkbookJson {
 
     $timelineQuery = $kql.Timeline + "`n| project TimeGenerated, Running, Healthy, Unhealthy, Deallocated, Starting"
 
-    # Tiles per VM name are capped - the grid below lists up to 5000
-    $unhealthyQuery = $kql.State + @'
-
-state
-| where Health == 'Unhealthy'
-| order by MinutesSince desc nulls first, VM asc
-| take 100
-| project VM, Health, Detail, ResourceGroup
-'@
-
     $groupsQuery = $kql.Groups + "`n| project ResourceGroup, SubscriptionId, Running, Healthy, Unhealthy, UnhealthyPct, Starting, Deallocated, Total"
 
     $detailQuery = $kql.State + @'
@@ -349,26 +339,6 @@ state
                         @{ seriesName = 'Deallocated'; label = 'Deallocated / stopped'; color = 'purple' }
                         @{ seriesName = 'Starting'; label = 'Starting (grace)'; color = 'gray' }
                     )
-                }
-            }
-        }
-        @{
-            type    = 3
-            name    = 'unhealthy-vms'
-            content = $laCommon + @{
-                title              = 'Unhealthy VMs (top 100) - running, past startup grace, no AMA heartbeat for more than {ThresholdMin} min'
-                query              = $unhealthyQuery
-                size               = 0
-                visualization      = 'tiles'
-                noDataMessage      = 'All running VMs (past startup grace) sent an AMA heartbeat within the threshold.'
-                noDataMessageStyle = 3
-                tileSettings       = @{
-                    titleContent     = @{ columnMatch = 'VM'; formatter = 1 }
-                    leftContent      = @{ columnMatch = 'Health'; formatter = 18; formatOptions = @{ thresholdsOptions = 'icons'; thresholdsGrid = @(@{ operator = 'Default'; thresholdValue = $null; representation = '4'; text = '' }) } }
-                    subtitleContent  = @{ columnMatch = 'Detail' }
-                    secondaryContent = @{ columnMatch = 'ResourceGroup' }
-                    showBorder       = $true
-                    size             = 'auto'
                 }
             }
         }

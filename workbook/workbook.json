@@ -3,116 +3,115 @@
   "items": [
     {
       "type": 1,
+      "name": "header",
       "content": {
         "json": "## AMA Heartbeat Health\nA running VM is **healthy** when the Azure Monitor Agent sent a heartbeat within the threshold. Without a heartbeat it is **Starting** during the startup grace period after a start/restart, and **unhealthy** afterwards. Deallocated/stopped VMs are counted separately.\n\n_Source: Azure Resource Graph (power state, change history, Resource Health) via `arg()` + Log Analytics `Heartbeat` table - no additional data is collected. Aggregated for 40k+ VMs; set Subscription/Resource group to `*` for all. github.com/chrochma/AMAHeartbeats_"
-      },
-      "name": "header"
+      }
     },
     {
       "type": 9,
+      "name": "parameters",
       "content": {
         "parameters": [
           {
-            "resourceType": "microsoft.resourcegraph/resources",
-            "crossComponentResources": [
-              "value::all"
-            ],
-            "isRequired": true,
-            "query": "resources | where type =~ 'microsoft.operationalinsights/workspaces' | project id",
-            "type": 5,
             "typeSettings": {
-              "showDefault": false,
+              "additionalResourceOptions": [],
               "resourceTypeFilter": {
                 "microsoft.operationalinsights/workspaces": true
               },
-              "additionalResourceOptions": []
+              "showDefault": false
             },
-            "name": "Workspace",
-            "queryType": 1,
-            "version": "KqlParameterItem/1.0",
-            "id": "6aa19163-80db-57b8-3103-ae7e75080c44",
+            "crossComponentResources": [
+              "value::all"
+            ],
+            "value": null,
+            "resourceType": "microsoft.resourcegraph/resources",
             "label": "Log Analytics workspace",
-            "value": null
+            "isRequired": true,
+            "type": 5,
+            "name": "Workspace",
+            "query": "resources | where type =~ 'microsoft.operationalinsights/workspaces' | project id",
+            "id": "6aa19163-80db-57b8-3103-ae7e75080c44",
+            "queryType": 1,
+            "version": "KqlParameterItem/1.0"
           },
           {
-            "name": "Subscription",
+            "type": 1,
             "label": "Subscription ID (* = all)",
             "value": "*",
-            "version": "KqlParameterItem/1.0",
+            "name": "Subscription",
             "isRequired": true,
-            "id": "b969c940-1d25-5e63-cf22-efa1adc1690b",
-            "type": 1
+            "version": "KqlParameterItem/1.0",
+            "id": "b969c940-1d25-5e63-cf22-efa1adc1690b"
           },
           {
-            "name": "ThresholdMin",
+            "type": 1,
             "label": "Heartbeat threshold (min)",
             "value": "10",
-            "version": "KqlParameterItem/1.0",
+            "name": "ThresholdMin",
             "isRequired": true,
-            "id": "9c0d2ebe-67c3-773c-2a4a-92e508984b17",
-            "type": 1
+            "version": "KqlParameterItem/1.0",
+            "id": "9c0d2ebe-67c3-773c-2a4a-92e508984b17"
           },
           {
-            "name": "StartupGraceMin",
+            "type": 1,
             "label": "Startup grace (min)",
             "value": "10",
-            "version": "KqlParameterItem/1.0",
+            "name": "StartupGraceMin",
             "isRequired": true,
-            "id": "891a611e-7ae9-d06e-385d-406133aea64d",
-            "type": 1
+            "version": "KqlParameterItem/1.0",
+            "id": "891a611e-7ae9-d06e-385d-406133aea64d"
           },
           {
-            "name": "ResourceGroup",
+            "type": 1,
             "label": "Resource group (* = all)",
             "value": "*",
-            "version": "KqlParameterItem/1.0",
+            "name": "ResourceGroup",
             "isRequired": true,
-            "id": "f7cd37b6-4cf0-6d82-5807-3f26301370f4",
-            "type": 1
+            "version": "KqlParameterItem/1.0",
+            "id": "f7cd37b6-4cf0-6d82-5807-3f26301370f4"
           },
           {
-            "isRequired": true,
-            "jsonData": "[{\"value\":\"1\",\"label\":\"Last hour\"},{\"value\":\"4\",\"label\":\"Last 4 hours\"},{\"value\":\"12\",\"label\":\"Last 12 hours\"},{\"value\":\"24\",\"label\":\"Last 24 hours\"},{\"value\":\"72\",\"label\":\"Last 3 days\"},{\"value\":\"168\",\"label\":\"Last 7 days\"},{\"value\":\"336\",\"label\":\"Last 14 days\"}]",
-            "type": 2,
             "typeSettings": {
               "additionalResourceOptions": [],
               "showDefault": false
             },
-            "name": "ChartHours",
-            "version": "KqlParameterItem/1.0",
-            "id": "3a21bbab-3a00-33bd-b528-38b846ed345f",
+            "value": "24",
             "label": "Chart time range",
-            "value": "24"
+            "jsonData": "[{\"value\":\"1\",\"label\":\"Last hour\"},{\"value\":\"4\",\"label\":\"Last 4 hours\"},{\"value\":\"12\",\"label\":\"Last 12 hours\"},{\"value\":\"24\",\"label\":\"Last 24 hours\"},{\"value\":\"72\",\"label\":\"Last 3 days\"},{\"value\":\"168\",\"label\":\"Last 7 days\"},{\"value\":\"336\",\"label\":\"Last 14 days\"}]",
+            "isRequired": true,
+            "type": 2,
+            "name": "ChartHours",
+            "id": "3a21bbab-3a00-33bd-b528-38b846ed345f",
+            "version": "KqlParameterItem/1.0"
           }
         ],
         "version": "KqlParameterItem/1.0",
-        "queryType": 0,
         "style": "pills",
+        "queryType": 0,
         "resourceType": "microsoft.operationalinsights/workspaces"
-      },
-      "name": "parameters"
+      }
     },
     {
       "type": 3,
+      "name": "running-count",
       "content": {
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
         "timeContext": {
           "durationMs": 86400000
         },
+        "query": "let T = {ThresholdMin}m;\r\nlet Grace = {StartupGraceMin}m;\r\nlet vms = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").Resources\r\n        | where type =~ 'microsoft.compute/virtualmachines'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | extend PS = tostring(properties.extended.instanceView.powerState.code)\r\n        | extend P = case(PS =~ 'PowerState/running', 'R', PS =~ 'PowerState/deallocated', 'D', PS =~ 'PowerState/stopped', 'S', 'O'),\r\n                 N = iff(todatetime(properties.timeCreated) > ago({StartupGraceMin}m), '1', '0')\r\n        | summarize L = make_list(strcat(P, N, id))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | extend Id = substring(L, 2)\r\n    | extend Parts = split(Id, '/')\r\n    | project VmId = tolower(Id), VM = tostring(Parts[8]), ResourceGroup = tolower(tostring(Parts[4])), SubscriptionId = tostring(Parts[2]),\r\n              Power = case(L startswith 'R', 'Running', L startswith 'D', 'Deallocated', L startswith 'S', 'Stopped', 'Other'),\r\n              NewVm = substring(L, 1, 1) == '1';\r\n// Any start/restart within the grace period (changes + current annotation), packed into one row\r\nlet boots = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresourcechanges\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.targetResourceType) =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where tostring(properties.changes['properties.annotationName'].newValue) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.changeAttributes.timestamp)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(tostring(split(L, '|')[1]), '/providers/microsoft.resourcehealth/')[0]);\r\nlet bootsNow = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresources\r\n        | where type =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.annotationName) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.occurredTime)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(L, '|')[1]);\r\nlet recentBoot = union boots, bootsNow | summarize LastBoot = max(LastBoot) by VmId;\r\nlet lastHb = Heartbeat\r\n    | where TimeGenerated > ago(1d)\r\n    | where Category == 'Azure Monitor Agent' and _ResourceId has '/providers/microsoft.compute/virtualmachines/'\n    | where '{Subscription}' == '*' or _ResourceId startswith strcat('/subscriptions/', '{Subscription}', '/')\n    | where '{ResourceGroup}' == '*' or _ResourceId contains strcat('/resourcegroups/', '{ResourceGroup}', '/')\r\n    | summarize LastHeartbeat = max(TimeGenerated) by VmId = tolower(_ResourceId);\r\nlet state = vms\r\n    | join kind=leftouter recentBoot on VmId\r\n    | join kind=leftouter lastHb on VmId\r\n    | extend InGrace = NewVm or isnotnull(LastBoot)\r\n    | extend MinutesSince = iff(isnull(LastHeartbeat), real(null), round((now() - LastHeartbeat) / 1m, 1))\r\n    | extend Health = case(Power != 'Running', Power,\r\n                           isnotnull(LastHeartbeat) and LastHeartbeat >= ago(T), 'Healthy',\r\n                           InGrace, 'Starting', 'Unhealthy')\r\n    | extend Detail = case(Health == 'Starting', 'Started within the grace period, waiting for the first heartbeat',\r\n                           Power != 'Running', strcat('VM is ', tolower(Power)),\r\n                           isnull(LastHeartbeat), 'Running, no AMA heartbeat in 24h',\r\n                           strcat('Running, last heartbeat ', tostring(MinutesSince), ' min ago'))\r\n    | project VmId, VM, SubscriptionId, ResourceGroup, Power, Health, LastBoot, LastHeartbeat, MinutesSince, Detail;\r\nstate\r\n| summarize Running = sum(iff(Power == 'Running', 1, 0)), Healthy = sum(iff(Health == 'Healthy', 1, 0)),\r\n            Unhealthy = sum(iff(Health == 'Unhealthy', 1, 0)), Starting = sum(iff(Health == 'Starting', 1, 0)),\r\n            Deallocated = sum(iff(Power == 'Deallocated', 1, 0)), Total = count()\n| project Title = 'Running', Subtitle = 'VMs in running state', Count = Running",
+        "version": "KqlItem/1.0",
         "resourceType": "microsoft.operationalinsights/workspaces",
         "tileSettings": {
-          "subtitleContent": {
-            "columnMatch": "Subtitle"
-          },
-          "titleContent": {
-            "columnMatch": "Title",
-            "formatter": 1
-          },
           "leftContent": {
-            "formatter": 12,
             "formatOptions": {
               "palette": "blue"
             },
             "columnMatch": "Count",
+            "formatter": 12,
             "numberFormat": {
               "options": {
                 "style": "decimal",
@@ -121,42 +120,42 @@
               "unit": 17
             }
           },
-          "showBorder": true,
-          "size": "full"
-        },
-        "visualization": "tiles",
-        "query": "let T = {ThresholdMin}m;\r\nlet Grace = {StartupGraceMin}m;\r\nlet vms = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").Resources\r\n        | where type =~ 'microsoft.compute/virtualmachines'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | extend PS = tostring(properties.extended.instanceView.powerState.code)\r\n        | extend P = case(PS =~ 'PowerState/running', 'R', PS =~ 'PowerState/deallocated', 'D', PS =~ 'PowerState/stopped', 'S', 'O'),\r\n                 N = iff(todatetime(properties.timeCreated) > ago({StartupGraceMin}m), '1', '0')\r\n        | summarize L = make_list(strcat(P, N, id))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | extend Id = substring(L, 2)\r\n    | extend Parts = split(Id, '/')\r\n    | project VmId = tolower(Id), VM = tostring(Parts[8]), ResourceGroup = tolower(tostring(Parts[4])), SubscriptionId = tostring(Parts[2]),\r\n              Power = case(L startswith 'R', 'Running', L startswith 'D', 'Deallocated', L startswith 'S', 'Stopped', 'Other'),\r\n              NewVm = substring(L, 1, 1) == '1';\r\n// Any start/restart within the grace period (changes + current annotation), packed into one row\r\nlet boots = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresourcechanges\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.targetResourceType) =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where tostring(properties.changes['properties.annotationName'].newValue) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.changeAttributes.timestamp)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(tostring(split(L, '|')[1]), '/providers/microsoft.resourcehealth/')[0]);\r\nlet bootsNow = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresources\r\n        | where type =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.annotationName) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.occurredTime)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(L, '|')[1]);\r\nlet recentBoot = union boots, bootsNow | summarize LastBoot = max(LastBoot) by VmId;\r\nlet lastHb = Heartbeat\r\n    | where TimeGenerated > ago(1d)\r\n    | where Category == 'Azure Monitor Agent' and _ResourceId has '/providers/microsoft.compute/virtualmachines/'\n    | where '{Subscription}' == '*' or _ResourceId startswith strcat('/subscriptions/', '{Subscription}', '/')\n    | where '{ResourceGroup}' == '*' or _ResourceId contains strcat('/resourcegroups/', '{ResourceGroup}', '/')\r\n    | summarize LastHeartbeat = max(TimeGenerated) by VmId = tolower(_ResourceId);\r\nlet state = vms\r\n    | join kind=leftouter recentBoot on VmId\r\n    | join kind=leftouter lastHb on VmId\r\n    | extend InGrace = NewVm or isnotnull(LastBoot)\r\n    | extend MinutesSince = iff(isnull(LastHeartbeat), real(null), round((now() - LastHeartbeat) / 1m, 1))\r\n    | extend Health = case(Power != 'Running', Power,\r\n                           isnotnull(LastHeartbeat) and LastHeartbeat >= ago(T), 'Healthy',\r\n                           InGrace, 'Starting', 'Unhealthy')\r\n    | extend Detail = case(Health == 'Starting', 'Started within the grace period, waiting for the first heartbeat',\r\n                           Power != 'Running', strcat('VM is ', tolower(Power)),\r\n                           isnull(LastHeartbeat), 'Running, no AMA heartbeat in 24h',\r\n                           strcat('Running, last heartbeat ', tostring(MinutesSince), ' min ago'))\r\n    | project VmId, VM, SubscriptionId, ResourceGroup, Power, Health, LastBoot, LastHeartbeat, MinutesSince, Detail;\r\nstate\r\n| summarize Running = sum(iff(Power == 'Running', 1, 0)), Healthy = sum(iff(Health == 'Healthy', 1, 0)),\r\n            Unhealthy = sum(iff(Health == 'Unhealthy', 1, 0)), Starting = sum(iff(Health == 'Starting', 1, 0)),\r\n            Deallocated = sum(iff(Power == 'Deallocated', 1, 0)), Total = count()\n| project Title = 'Running', Subtitle = 'VMs in running state', Count = Running",
-        "crossComponentResources": [
-          "{Workspace}"
-        ],
-        "size": 4,
-        "version": "KqlItem/1.0",
-        "queryType": 0
-      },
-      "name": "running-count",
-      "customWidth": "20"
-    },
-    {
-      "type": 3,
-      "content": {
-        "timeContext": {
-          "durationMs": 86400000
-        },
-        "resourceType": "microsoft.operationalinsights/workspaces",
-        "tileSettings": {
           "subtitleContent": {
             "columnMatch": "Subtitle"
           },
+          "size": "full",
           "titleContent": {
             "columnMatch": "Title",
             "formatter": 1
           },
+          "showBorder": true
+        },
+        "visualization": "tiles",
+        "size": 4,
+        "queryType": 0
+      },
+      "customWidth": "20"
+    },
+    {
+      "type": 3,
+      "name": "healthy-count",
+      "content": {
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "timeContext": {
+          "durationMs": 86400000
+        },
+        "query": "let T = {ThresholdMin}m;\r\nlet Grace = {StartupGraceMin}m;\r\nlet vms = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").Resources\r\n        | where type =~ 'microsoft.compute/virtualmachines'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | extend PS = tostring(properties.extended.instanceView.powerState.code)\r\n        | extend P = case(PS =~ 'PowerState/running', 'R', PS =~ 'PowerState/deallocated', 'D', PS =~ 'PowerState/stopped', 'S', 'O'),\r\n                 N = iff(todatetime(properties.timeCreated) > ago({StartupGraceMin}m), '1', '0')\r\n        | summarize L = make_list(strcat(P, N, id))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | extend Id = substring(L, 2)\r\n    | extend Parts = split(Id, '/')\r\n    | project VmId = tolower(Id), VM = tostring(Parts[8]), ResourceGroup = tolower(tostring(Parts[4])), SubscriptionId = tostring(Parts[2]),\r\n              Power = case(L startswith 'R', 'Running', L startswith 'D', 'Deallocated', L startswith 'S', 'Stopped', 'Other'),\r\n              NewVm = substring(L, 1, 1) == '1';\r\n// Any start/restart within the grace period (changes + current annotation), packed into one row\r\nlet boots = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresourcechanges\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.targetResourceType) =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where tostring(properties.changes['properties.annotationName'].newValue) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.changeAttributes.timestamp)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(tostring(split(L, '|')[1]), '/providers/microsoft.resourcehealth/')[0]);\r\nlet bootsNow = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresources\r\n        | where type =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.annotationName) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.occurredTime)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(L, '|')[1]);\r\nlet recentBoot = union boots, bootsNow | summarize LastBoot = max(LastBoot) by VmId;\r\nlet lastHb = Heartbeat\r\n    | where TimeGenerated > ago(1d)\r\n    | where Category == 'Azure Monitor Agent' and _ResourceId has '/providers/microsoft.compute/virtualmachines/'\n    | where '{Subscription}' == '*' or _ResourceId startswith strcat('/subscriptions/', '{Subscription}', '/')\n    | where '{ResourceGroup}' == '*' or _ResourceId contains strcat('/resourcegroups/', '{ResourceGroup}', '/')\r\n    | summarize LastHeartbeat = max(TimeGenerated) by VmId = tolower(_ResourceId);\r\nlet state = vms\r\n    | join kind=leftouter recentBoot on VmId\r\n    | join kind=leftouter lastHb on VmId\r\n    | extend InGrace = NewVm or isnotnull(LastBoot)\r\n    | extend MinutesSince = iff(isnull(LastHeartbeat), real(null), round((now() - LastHeartbeat) / 1m, 1))\r\n    | extend Health = case(Power != 'Running', Power,\r\n                           isnotnull(LastHeartbeat) and LastHeartbeat >= ago(T), 'Healthy',\r\n                           InGrace, 'Starting', 'Unhealthy')\r\n    | extend Detail = case(Health == 'Starting', 'Started within the grace period, waiting for the first heartbeat',\r\n                           Power != 'Running', strcat('VM is ', tolower(Power)),\r\n                           isnull(LastHeartbeat), 'Running, no AMA heartbeat in 24h',\r\n                           strcat('Running, last heartbeat ', tostring(MinutesSince), ' min ago'))\r\n    | project VmId, VM, SubscriptionId, ResourceGroup, Power, Health, LastBoot, LastHeartbeat, MinutesSince, Detail;\r\nstate\r\n| summarize Running = sum(iff(Power == 'Running', 1, 0)), Healthy = sum(iff(Health == 'Healthy', 1, 0)),\r\n            Unhealthy = sum(iff(Health == 'Unhealthy', 1, 0)), Starting = sum(iff(Health == 'Starting', 1, 0)),\r\n            Deallocated = sum(iff(Power == 'Deallocated', 1, 0)), Total = count()\n| project Title = 'Healthy', Subtitle = 'AMA heartbeat within {ThresholdMin} min', Count = Healthy",
+        "version": "KqlItem/1.0",
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "tileSettings": {
           "leftContent": {
-            "formatter": 12,
             "formatOptions": {
               "palette": "green"
             },
             "columnMatch": "Count",
+            "formatter": 12,
             "numberFormat": {
               "options": {
                 "style": "decimal",
@@ -165,42 +164,42 @@
               "unit": 17
             }
           },
-          "showBorder": true,
-          "size": "full"
-        },
-        "visualization": "tiles",
-        "query": "let T = {ThresholdMin}m;\r\nlet Grace = {StartupGraceMin}m;\r\nlet vms = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").Resources\r\n        | where type =~ 'microsoft.compute/virtualmachines'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | extend PS = tostring(properties.extended.instanceView.powerState.code)\r\n        | extend P = case(PS =~ 'PowerState/running', 'R', PS =~ 'PowerState/deallocated', 'D', PS =~ 'PowerState/stopped', 'S', 'O'),\r\n                 N = iff(todatetime(properties.timeCreated) > ago({StartupGraceMin}m), '1', '0')\r\n        | summarize L = make_list(strcat(P, N, id))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | extend Id = substring(L, 2)\r\n    | extend Parts = split(Id, '/')\r\n    | project VmId = tolower(Id), VM = tostring(Parts[8]), ResourceGroup = tolower(tostring(Parts[4])), SubscriptionId = tostring(Parts[2]),\r\n              Power = case(L startswith 'R', 'Running', L startswith 'D', 'Deallocated', L startswith 'S', 'Stopped', 'Other'),\r\n              NewVm = substring(L, 1, 1) == '1';\r\n// Any start/restart within the grace period (changes + current annotation), packed into one row\r\nlet boots = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresourcechanges\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.targetResourceType) =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where tostring(properties.changes['properties.annotationName'].newValue) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.changeAttributes.timestamp)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(tostring(split(L, '|')[1]), '/providers/microsoft.resourcehealth/')[0]);\r\nlet bootsNow = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresources\r\n        | where type =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.annotationName) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.occurredTime)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(L, '|')[1]);\r\nlet recentBoot = union boots, bootsNow | summarize LastBoot = max(LastBoot) by VmId;\r\nlet lastHb = Heartbeat\r\n    | where TimeGenerated > ago(1d)\r\n    | where Category == 'Azure Monitor Agent' and _ResourceId has '/providers/microsoft.compute/virtualmachines/'\n    | where '{Subscription}' == '*' or _ResourceId startswith strcat('/subscriptions/', '{Subscription}', '/')\n    | where '{ResourceGroup}' == '*' or _ResourceId contains strcat('/resourcegroups/', '{ResourceGroup}', '/')\r\n    | summarize LastHeartbeat = max(TimeGenerated) by VmId = tolower(_ResourceId);\r\nlet state = vms\r\n    | join kind=leftouter recentBoot on VmId\r\n    | join kind=leftouter lastHb on VmId\r\n    | extend InGrace = NewVm or isnotnull(LastBoot)\r\n    | extend MinutesSince = iff(isnull(LastHeartbeat), real(null), round((now() - LastHeartbeat) / 1m, 1))\r\n    | extend Health = case(Power != 'Running', Power,\r\n                           isnotnull(LastHeartbeat) and LastHeartbeat >= ago(T), 'Healthy',\r\n                           InGrace, 'Starting', 'Unhealthy')\r\n    | extend Detail = case(Health == 'Starting', 'Started within the grace period, waiting for the first heartbeat',\r\n                           Power != 'Running', strcat('VM is ', tolower(Power)),\r\n                           isnull(LastHeartbeat), 'Running, no AMA heartbeat in 24h',\r\n                           strcat('Running, last heartbeat ', tostring(MinutesSince), ' min ago'))\r\n    | project VmId, VM, SubscriptionId, ResourceGroup, Power, Health, LastBoot, LastHeartbeat, MinutesSince, Detail;\r\nstate\r\n| summarize Running = sum(iff(Power == 'Running', 1, 0)), Healthy = sum(iff(Health == 'Healthy', 1, 0)),\r\n            Unhealthy = sum(iff(Health == 'Unhealthy', 1, 0)), Starting = sum(iff(Health == 'Starting', 1, 0)),\r\n            Deallocated = sum(iff(Power == 'Deallocated', 1, 0)), Total = count()\n| project Title = 'Healthy', Subtitle = 'AMA heartbeat within {ThresholdMin} min', Count = Healthy",
-        "crossComponentResources": [
-          "{Workspace}"
-        ],
-        "size": 4,
-        "version": "KqlItem/1.0",
-        "queryType": 0
-      },
-      "name": "healthy-count",
-      "customWidth": "20"
-    },
-    {
-      "type": 3,
-      "content": {
-        "timeContext": {
-          "durationMs": 86400000
-        },
-        "resourceType": "microsoft.operationalinsights/workspaces",
-        "tileSettings": {
           "subtitleContent": {
             "columnMatch": "Subtitle"
           },
+          "size": "full",
           "titleContent": {
             "columnMatch": "Title",
             "formatter": 1
           },
+          "showBorder": true
+        },
+        "visualization": "tiles",
+        "size": 4,
+        "queryType": 0
+      },
+      "customWidth": "20"
+    },
+    {
+      "type": 3,
+      "name": "unhealthy-count",
+      "content": {
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "timeContext": {
+          "durationMs": 86400000
+        },
+        "query": "let T = {ThresholdMin}m;\r\nlet Grace = {StartupGraceMin}m;\r\nlet vms = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").Resources\r\n        | where type =~ 'microsoft.compute/virtualmachines'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | extend PS = tostring(properties.extended.instanceView.powerState.code)\r\n        | extend P = case(PS =~ 'PowerState/running', 'R', PS =~ 'PowerState/deallocated', 'D', PS =~ 'PowerState/stopped', 'S', 'O'),\r\n                 N = iff(todatetime(properties.timeCreated) > ago({StartupGraceMin}m), '1', '0')\r\n        | summarize L = make_list(strcat(P, N, id))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | extend Id = substring(L, 2)\r\n    | extend Parts = split(Id, '/')\r\n    | project VmId = tolower(Id), VM = tostring(Parts[8]), ResourceGroup = tolower(tostring(Parts[4])), SubscriptionId = tostring(Parts[2]),\r\n              Power = case(L startswith 'R', 'Running', L startswith 'D', 'Deallocated', L startswith 'S', 'Stopped', 'Other'),\r\n              NewVm = substring(L, 1, 1) == '1';\r\n// Any start/restart within the grace period (changes + current annotation), packed into one row\r\nlet boots = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresourcechanges\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.targetResourceType) =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where tostring(properties.changes['properties.annotationName'].newValue) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.changeAttributes.timestamp)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(tostring(split(L, '|')[1]), '/providers/microsoft.resourcehealth/')[0]);\r\nlet bootsNow = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresources\r\n        | where type =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.annotationName) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.occurredTime)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(L, '|')[1]);\r\nlet recentBoot = union boots, bootsNow | summarize LastBoot = max(LastBoot) by VmId;\r\nlet lastHb = Heartbeat\r\n    | where TimeGenerated > ago(1d)\r\n    | where Category == 'Azure Monitor Agent' and _ResourceId has '/providers/microsoft.compute/virtualmachines/'\n    | where '{Subscription}' == '*' or _ResourceId startswith strcat('/subscriptions/', '{Subscription}', '/')\n    | where '{ResourceGroup}' == '*' or _ResourceId contains strcat('/resourcegroups/', '{ResourceGroup}', '/')\r\n    | summarize LastHeartbeat = max(TimeGenerated) by VmId = tolower(_ResourceId);\r\nlet state = vms\r\n    | join kind=leftouter recentBoot on VmId\r\n    | join kind=leftouter lastHb on VmId\r\n    | extend InGrace = NewVm or isnotnull(LastBoot)\r\n    | extend MinutesSince = iff(isnull(LastHeartbeat), real(null), round((now() - LastHeartbeat) / 1m, 1))\r\n    | extend Health = case(Power != 'Running', Power,\r\n                           isnotnull(LastHeartbeat) and LastHeartbeat >= ago(T), 'Healthy',\r\n                           InGrace, 'Starting', 'Unhealthy')\r\n    | extend Detail = case(Health == 'Starting', 'Started within the grace period, waiting for the first heartbeat',\r\n                           Power != 'Running', strcat('VM is ', tolower(Power)),\r\n                           isnull(LastHeartbeat), 'Running, no AMA heartbeat in 24h',\r\n                           strcat('Running, last heartbeat ', tostring(MinutesSince), ' min ago'))\r\n    | project VmId, VM, SubscriptionId, ResourceGroup, Power, Health, LastBoot, LastHeartbeat, MinutesSince, Detail;\r\nstate\r\n| summarize Running = sum(iff(Power == 'Running', 1, 0)), Healthy = sum(iff(Health == 'Healthy', 1, 0)),\r\n            Unhealthy = sum(iff(Health == 'Unhealthy', 1, 0)), Starting = sum(iff(Health == 'Starting', 1, 0)),\r\n            Deallocated = sum(iff(Power == 'Deallocated', 1, 0)), Total = count()\n| project Title = 'Unhealthy', Subtitle = 'past grace, no heartbeat > {ThresholdMin} min', Count = Unhealthy",
+        "version": "KqlItem/1.0",
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "tileSettings": {
           "leftContent": {
-            "formatter": 12,
             "formatOptions": {
               "palette": "redBright"
             },
             "columnMatch": "Count",
+            "formatter": 12,
             "numberFormat": {
               "options": {
                 "style": "decimal",
@@ -209,42 +208,42 @@
               "unit": 17
             }
           },
-          "showBorder": true,
-          "size": "full"
-        },
-        "visualization": "tiles",
-        "query": "let T = {ThresholdMin}m;\r\nlet Grace = {StartupGraceMin}m;\r\nlet vms = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").Resources\r\n        | where type =~ 'microsoft.compute/virtualmachines'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | extend PS = tostring(properties.extended.instanceView.powerState.code)\r\n        | extend P = case(PS =~ 'PowerState/running', 'R', PS =~ 'PowerState/deallocated', 'D', PS =~ 'PowerState/stopped', 'S', 'O'),\r\n                 N = iff(todatetime(properties.timeCreated) > ago({StartupGraceMin}m), '1', '0')\r\n        | summarize L = make_list(strcat(P, N, id))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | extend Id = substring(L, 2)\r\n    | extend Parts = split(Id, '/')\r\n    | project VmId = tolower(Id), VM = tostring(Parts[8]), ResourceGroup = tolower(tostring(Parts[4])), SubscriptionId = tostring(Parts[2]),\r\n              Power = case(L startswith 'R', 'Running', L startswith 'D', 'Deallocated', L startswith 'S', 'Stopped', 'Other'),\r\n              NewVm = substring(L, 1, 1) == '1';\r\n// Any start/restart within the grace period (changes + current annotation), packed into one row\r\nlet boots = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresourcechanges\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.targetResourceType) =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where tostring(properties.changes['properties.annotationName'].newValue) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.changeAttributes.timestamp)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(tostring(split(L, '|')[1]), '/providers/microsoft.resourcehealth/')[0]);\r\nlet bootsNow = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresources\r\n        | where type =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.annotationName) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.occurredTime)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(L, '|')[1]);\r\nlet recentBoot = union boots, bootsNow | summarize LastBoot = max(LastBoot) by VmId;\r\nlet lastHb = Heartbeat\r\n    | where TimeGenerated > ago(1d)\r\n    | where Category == 'Azure Monitor Agent' and _ResourceId has '/providers/microsoft.compute/virtualmachines/'\n    | where '{Subscription}' == '*' or _ResourceId startswith strcat('/subscriptions/', '{Subscription}', '/')\n    | where '{ResourceGroup}' == '*' or _ResourceId contains strcat('/resourcegroups/', '{ResourceGroup}', '/')\r\n    | summarize LastHeartbeat = max(TimeGenerated) by VmId = tolower(_ResourceId);\r\nlet state = vms\r\n    | join kind=leftouter recentBoot on VmId\r\n    | join kind=leftouter lastHb on VmId\r\n    | extend InGrace = NewVm or isnotnull(LastBoot)\r\n    | extend MinutesSince = iff(isnull(LastHeartbeat), real(null), round((now() - LastHeartbeat) / 1m, 1))\r\n    | extend Health = case(Power != 'Running', Power,\r\n                           isnotnull(LastHeartbeat) and LastHeartbeat >= ago(T), 'Healthy',\r\n                           InGrace, 'Starting', 'Unhealthy')\r\n    | extend Detail = case(Health == 'Starting', 'Started within the grace period, waiting for the first heartbeat',\r\n                           Power != 'Running', strcat('VM is ', tolower(Power)),\r\n                           isnull(LastHeartbeat), 'Running, no AMA heartbeat in 24h',\r\n                           strcat('Running, last heartbeat ', tostring(MinutesSince), ' min ago'))\r\n    | project VmId, VM, SubscriptionId, ResourceGroup, Power, Health, LastBoot, LastHeartbeat, MinutesSince, Detail;\r\nstate\r\n| summarize Running = sum(iff(Power == 'Running', 1, 0)), Healthy = sum(iff(Health == 'Healthy', 1, 0)),\r\n            Unhealthy = sum(iff(Health == 'Unhealthy', 1, 0)), Starting = sum(iff(Health == 'Starting', 1, 0)),\r\n            Deallocated = sum(iff(Power == 'Deallocated', 1, 0)), Total = count()\n| project Title = 'Unhealthy', Subtitle = 'past grace, no heartbeat > {ThresholdMin} min', Count = Unhealthy",
-        "crossComponentResources": [
-          "{Workspace}"
-        ],
-        "size": 4,
-        "version": "KqlItem/1.0",
-        "queryType": 0
-      },
-      "name": "unhealthy-count",
-      "customWidth": "20"
-    },
-    {
-      "type": 3,
-      "content": {
-        "timeContext": {
-          "durationMs": 86400000
-        },
-        "resourceType": "microsoft.operationalinsights/workspaces",
-        "tileSettings": {
           "subtitleContent": {
             "columnMatch": "Subtitle"
           },
+          "size": "full",
           "titleContent": {
             "columnMatch": "Title",
             "formatter": 1
           },
+          "showBorder": true
+        },
+        "visualization": "tiles",
+        "size": 4,
+        "queryType": 0
+      },
+      "customWidth": "20"
+    },
+    {
+      "type": 3,
+      "name": "starting-count",
+      "content": {
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "timeContext": {
+          "durationMs": 86400000
+        },
+        "query": "let T = {ThresholdMin}m;\r\nlet Grace = {StartupGraceMin}m;\r\nlet vms = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").Resources\r\n        | where type =~ 'microsoft.compute/virtualmachines'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | extend PS = tostring(properties.extended.instanceView.powerState.code)\r\n        | extend P = case(PS =~ 'PowerState/running', 'R', PS =~ 'PowerState/deallocated', 'D', PS =~ 'PowerState/stopped', 'S', 'O'),\r\n                 N = iff(todatetime(properties.timeCreated) > ago({StartupGraceMin}m), '1', '0')\r\n        | summarize L = make_list(strcat(P, N, id))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | extend Id = substring(L, 2)\r\n    | extend Parts = split(Id, '/')\r\n    | project VmId = tolower(Id), VM = tostring(Parts[8]), ResourceGroup = tolower(tostring(Parts[4])), SubscriptionId = tostring(Parts[2]),\r\n              Power = case(L startswith 'R', 'Running', L startswith 'D', 'Deallocated', L startswith 'S', 'Stopped', 'Other'),\r\n              NewVm = substring(L, 1, 1) == '1';\r\n// Any start/restart within the grace period (changes + current annotation), packed into one row\r\nlet boots = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresourcechanges\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.targetResourceType) =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where tostring(properties.changes['properties.annotationName'].newValue) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.changeAttributes.timestamp)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(tostring(split(L, '|')[1]), '/providers/microsoft.resourcehealth/')[0]);\r\nlet bootsNow = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresources\r\n        | where type =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.annotationName) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.occurredTime)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(L, '|')[1]);\r\nlet recentBoot = union boots, bootsNow | summarize LastBoot = max(LastBoot) by VmId;\r\nlet lastHb = Heartbeat\r\n    | where TimeGenerated > ago(1d)\r\n    | where Category == 'Azure Monitor Agent' and _ResourceId has '/providers/microsoft.compute/virtualmachines/'\n    | where '{Subscription}' == '*' or _ResourceId startswith strcat('/subscriptions/', '{Subscription}', '/')\n    | where '{ResourceGroup}' == '*' or _ResourceId contains strcat('/resourcegroups/', '{ResourceGroup}', '/')\r\n    | summarize LastHeartbeat = max(TimeGenerated) by VmId = tolower(_ResourceId);\r\nlet state = vms\r\n    | join kind=leftouter recentBoot on VmId\r\n    | join kind=leftouter lastHb on VmId\r\n    | extend InGrace = NewVm or isnotnull(LastBoot)\r\n    | extend MinutesSince = iff(isnull(LastHeartbeat), real(null), round((now() - LastHeartbeat) / 1m, 1))\r\n    | extend Health = case(Power != 'Running', Power,\r\n                           isnotnull(LastHeartbeat) and LastHeartbeat >= ago(T), 'Healthy',\r\n                           InGrace, 'Starting', 'Unhealthy')\r\n    | extend Detail = case(Health == 'Starting', 'Started within the grace period, waiting for the first heartbeat',\r\n                           Power != 'Running', strcat('VM is ', tolower(Power)),\r\n                           isnull(LastHeartbeat), 'Running, no AMA heartbeat in 24h',\r\n                           strcat('Running, last heartbeat ', tostring(MinutesSince), ' min ago'))\r\n    | project VmId, VM, SubscriptionId, ResourceGroup, Power, Health, LastBoot, LastHeartbeat, MinutesSince, Detail;\r\nstate\r\n| summarize Running = sum(iff(Power == 'Running', 1, 0)), Healthy = sum(iff(Health == 'Healthy', 1, 0)),\r\n            Unhealthy = sum(iff(Health == 'Unhealthy', 1, 0)), Starting = sum(iff(Health == 'Starting', 1, 0)),\r\n            Deallocated = sum(iff(Power == 'Deallocated', 1, 0)), Total = count()\n| project Title = 'Starting', Subtitle = 'started < {StartupGraceMin} min ago, no heartbeat yet', Count = Starting",
+        "version": "KqlItem/1.0",
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "tileSettings": {
           "leftContent": {
-            "formatter": 12,
             "formatOptions": {
               "palette": "gray"
             },
             "columnMatch": "Count",
+            "formatter": 12,
             "numberFormat": {
               "options": {
                 "style": "decimal",
@@ -253,42 +252,42 @@
               "unit": 17
             }
           },
-          "showBorder": true,
-          "size": "full"
-        },
-        "visualization": "tiles",
-        "query": "let T = {ThresholdMin}m;\r\nlet Grace = {StartupGraceMin}m;\r\nlet vms = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").Resources\r\n        | where type =~ 'microsoft.compute/virtualmachines'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | extend PS = tostring(properties.extended.instanceView.powerState.code)\r\n        | extend P = case(PS =~ 'PowerState/running', 'R', PS =~ 'PowerState/deallocated', 'D', PS =~ 'PowerState/stopped', 'S', 'O'),\r\n                 N = iff(todatetime(properties.timeCreated) > ago({StartupGraceMin}m), '1', '0')\r\n        | summarize L = make_list(strcat(P, N, id))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | extend Id = substring(L, 2)\r\n    | extend Parts = split(Id, '/')\r\n    | project VmId = tolower(Id), VM = tostring(Parts[8]), ResourceGroup = tolower(tostring(Parts[4])), SubscriptionId = tostring(Parts[2]),\r\n              Power = case(L startswith 'R', 'Running', L startswith 'D', 'Deallocated', L startswith 'S', 'Stopped', 'Other'),\r\n              NewVm = substring(L, 1, 1) == '1';\r\n// Any start/restart within the grace period (changes + current annotation), packed into one row\r\nlet boots = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresourcechanges\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.targetResourceType) =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where tostring(properties.changes['properties.annotationName'].newValue) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.changeAttributes.timestamp)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(tostring(split(L, '|')[1]), '/providers/microsoft.resourcehealth/')[0]);\r\nlet bootsNow = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresources\r\n        | where type =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.annotationName) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.occurredTime)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(L, '|')[1]);\r\nlet recentBoot = union boots, bootsNow | summarize LastBoot = max(LastBoot) by VmId;\r\nlet lastHb = Heartbeat\r\n    | where TimeGenerated > ago(1d)\r\n    | where Category == 'Azure Monitor Agent' and _ResourceId has '/providers/microsoft.compute/virtualmachines/'\n    | where '{Subscription}' == '*' or _ResourceId startswith strcat('/subscriptions/', '{Subscription}', '/')\n    | where '{ResourceGroup}' == '*' or _ResourceId contains strcat('/resourcegroups/', '{ResourceGroup}', '/')\r\n    | summarize LastHeartbeat = max(TimeGenerated) by VmId = tolower(_ResourceId);\r\nlet state = vms\r\n    | join kind=leftouter recentBoot on VmId\r\n    | join kind=leftouter lastHb on VmId\r\n    | extend InGrace = NewVm or isnotnull(LastBoot)\r\n    | extend MinutesSince = iff(isnull(LastHeartbeat), real(null), round((now() - LastHeartbeat) / 1m, 1))\r\n    | extend Health = case(Power != 'Running', Power,\r\n                           isnotnull(LastHeartbeat) and LastHeartbeat >= ago(T), 'Healthy',\r\n                           InGrace, 'Starting', 'Unhealthy')\r\n    | extend Detail = case(Health == 'Starting', 'Started within the grace period, waiting for the first heartbeat',\r\n                           Power != 'Running', strcat('VM is ', tolower(Power)),\r\n                           isnull(LastHeartbeat), 'Running, no AMA heartbeat in 24h',\r\n                           strcat('Running, last heartbeat ', tostring(MinutesSince), ' min ago'))\r\n    | project VmId, VM, SubscriptionId, ResourceGroup, Power, Health, LastBoot, LastHeartbeat, MinutesSince, Detail;\r\nstate\r\n| summarize Running = sum(iff(Power == 'Running', 1, 0)), Healthy = sum(iff(Health == 'Healthy', 1, 0)),\r\n            Unhealthy = sum(iff(Health == 'Unhealthy', 1, 0)), Starting = sum(iff(Health == 'Starting', 1, 0)),\r\n            Deallocated = sum(iff(Power == 'Deallocated', 1, 0)), Total = count()\n| project Title = 'Starting', Subtitle = 'started < {StartupGraceMin} min ago, no heartbeat yet', Count = Starting",
-        "crossComponentResources": [
-          "{Workspace}"
-        ],
-        "size": 4,
-        "version": "KqlItem/1.0",
-        "queryType": 0
-      },
-      "name": "starting-count",
-      "customWidth": "20"
-    },
-    {
-      "type": 3,
-      "content": {
-        "timeContext": {
-          "durationMs": 86400000
-        },
-        "resourceType": "microsoft.operationalinsights/workspaces",
-        "tileSettings": {
           "subtitleContent": {
             "columnMatch": "Subtitle"
           },
+          "size": "full",
           "titleContent": {
             "columnMatch": "Title",
             "formatter": 1
           },
+          "showBorder": true
+        },
+        "visualization": "tiles",
+        "size": 4,
+        "queryType": 0
+      },
+      "customWidth": "20"
+    },
+    {
+      "type": 3,
+      "name": "deallocated-count",
+      "content": {
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
+        "timeContext": {
+          "durationMs": 86400000
+        },
+        "query": "let T = {ThresholdMin}m;\r\nlet Grace = {StartupGraceMin}m;\r\nlet vms = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").Resources\r\n        | where type =~ 'microsoft.compute/virtualmachines'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | extend PS = tostring(properties.extended.instanceView.powerState.code)\r\n        | extend P = case(PS =~ 'PowerState/running', 'R', PS =~ 'PowerState/deallocated', 'D', PS =~ 'PowerState/stopped', 'S', 'O'),\r\n                 N = iff(todatetime(properties.timeCreated) > ago({StartupGraceMin}m), '1', '0')\r\n        | summarize L = make_list(strcat(P, N, id))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | extend Id = substring(L, 2)\r\n    | extend Parts = split(Id, '/')\r\n    | project VmId = tolower(Id), VM = tostring(Parts[8]), ResourceGroup = tolower(tostring(Parts[4])), SubscriptionId = tostring(Parts[2]),\r\n              Power = case(L startswith 'R', 'Running', L startswith 'D', 'Deallocated', L startswith 'S', 'Stopped', 'Other'),\r\n              NewVm = substring(L, 1, 1) == '1';\r\n// Any start/restart within the grace period (changes + current annotation), packed into one row\r\nlet boots = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresourcechanges\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.targetResourceType) =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where tostring(properties.changes['properties.annotationName'].newValue) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.changeAttributes.timestamp)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(tostring(split(L, '|')[1]), '/providers/microsoft.resourcehealth/')[0]);\r\nlet bootsNow = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresources\r\n        | where type =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.annotationName) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.occurredTime)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(L, '|')[1]);\r\nlet recentBoot = union boots, bootsNow | summarize LastBoot = max(LastBoot) by VmId;\r\nlet lastHb = Heartbeat\r\n    | where TimeGenerated > ago(1d)\r\n    | where Category == 'Azure Monitor Agent' and _ResourceId has '/providers/microsoft.compute/virtualmachines/'\n    | where '{Subscription}' == '*' or _ResourceId startswith strcat('/subscriptions/', '{Subscription}', '/')\n    | where '{ResourceGroup}' == '*' or _ResourceId contains strcat('/resourcegroups/', '{ResourceGroup}', '/')\r\n    | summarize LastHeartbeat = max(TimeGenerated) by VmId = tolower(_ResourceId);\r\nlet state = vms\r\n    | join kind=leftouter recentBoot on VmId\r\n    | join kind=leftouter lastHb on VmId\r\n    | extend InGrace = NewVm or isnotnull(LastBoot)\r\n    | extend MinutesSince = iff(isnull(LastHeartbeat), real(null), round((now() - LastHeartbeat) / 1m, 1))\r\n    | extend Health = case(Power != 'Running', Power,\r\n                           isnotnull(LastHeartbeat) and LastHeartbeat >= ago(T), 'Healthy',\r\n                           InGrace, 'Starting', 'Unhealthy')\r\n    | extend Detail = case(Health == 'Starting', 'Started within the grace period, waiting for the first heartbeat',\r\n                           Power != 'Running', strcat('VM is ', tolower(Power)),\r\n                           isnull(LastHeartbeat), 'Running, no AMA heartbeat in 24h',\r\n                           strcat('Running, last heartbeat ', tostring(MinutesSince), ' min ago'))\r\n    | project VmId, VM, SubscriptionId, ResourceGroup, Power, Health, LastBoot, LastHeartbeat, MinutesSince, Detail;\r\nstate\r\n| summarize Running = sum(iff(Power == 'Running', 1, 0)), Healthy = sum(iff(Health == 'Healthy', 1, 0)),\r\n            Unhealthy = sum(iff(Health == 'Unhealthy', 1, 0)), Starting = sum(iff(Health == 'Starting', 1, 0)),\r\n            Deallocated = sum(iff(Power == 'Deallocated', 1, 0)), Total = count()\n| project Title = 'Deallocated', Subtitle = 'VMs currently deallocated', Count = Deallocated",
+        "version": "KqlItem/1.0",
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "tileSettings": {
           "leftContent": {
-            "formatter": 12,
             "formatOptions": {
               "palette": "purple"
             },
             "columnMatch": "Count",
+            "formatter": 12,
             "numberFormat": {
               "options": {
                 "style": "decimal",
@@ -297,25 +296,29 @@
               "unit": 17
             }
           },
-          "showBorder": true,
-          "size": "full"
+          "subtitleContent": {
+            "columnMatch": "Subtitle"
+          },
+          "size": "full",
+          "titleContent": {
+            "columnMatch": "Title",
+            "formatter": 1
+          },
+          "showBorder": true
         },
         "visualization": "tiles",
-        "query": "let T = {ThresholdMin}m;\r\nlet Grace = {StartupGraceMin}m;\r\nlet vms = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").Resources\r\n        | where type =~ 'microsoft.compute/virtualmachines'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | extend PS = tostring(properties.extended.instanceView.powerState.code)\r\n        | extend P = case(PS =~ 'PowerState/running', 'R', PS =~ 'PowerState/deallocated', 'D', PS =~ 'PowerState/stopped', 'S', 'O'),\r\n                 N = iff(todatetime(properties.timeCreated) > ago({StartupGraceMin}m), '1', '0')\r\n        | summarize L = make_list(strcat(P, N, id))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | extend Id = substring(L, 2)\r\n    | extend Parts = split(Id, '/')\r\n    | project VmId = tolower(Id), VM = tostring(Parts[8]), ResourceGroup = tolower(tostring(Parts[4])), SubscriptionId = tostring(Parts[2]),\r\n              Power = case(L startswith 'R', 'Running', L startswith 'D', 'Deallocated', L startswith 'S', 'Stopped', 'Other'),\r\n              NewVm = substring(L, 1, 1) == '1';\r\n// Any start/restart within the grace period (changes + current annotation), packed into one row\r\nlet boots = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresourcechanges\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.targetResourceType) =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where tostring(properties.changes['properties.annotationName'].newValue) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.changeAttributes.timestamp)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(tostring(split(L, '|')[1]), '/providers/microsoft.resourcehealth/')[0]);\r\nlet bootsNow = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresources\r\n        | where type =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.annotationName) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.occurredTime)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(L, '|')[1]);\r\nlet recentBoot = union boots, bootsNow | summarize LastBoot = max(LastBoot) by VmId;\r\nlet lastHb = Heartbeat\r\n    | where TimeGenerated > ago(1d)\r\n    | where Category == 'Azure Monitor Agent' and _ResourceId has '/providers/microsoft.compute/virtualmachines/'\n    | where '{Subscription}' == '*' or _ResourceId startswith strcat('/subscriptions/', '{Subscription}', '/')\n    | where '{ResourceGroup}' == '*' or _ResourceId contains strcat('/resourcegroups/', '{ResourceGroup}', '/')\r\n    | summarize LastHeartbeat = max(TimeGenerated) by VmId = tolower(_ResourceId);\r\nlet state = vms\r\n    | join kind=leftouter recentBoot on VmId\r\n    | join kind=leftouter lastHb on VmId\r\n    | extend InGrace = NewVm or isnotnull(LastBoot)\r\n    | extend MinutesSince = iff(isnull(LastHeartbeat), real(null), round((now() - LastHeartbeat) / 1m, 1))\r\n    | extend Health = case(Power != 'Running', Power,\r\n                           isnotnull(LastHeartbeat) and LastHeartbeat >= ago(T), 'Healthy',\r\n                           InGrace, 'Starting', 'Unhealthy')\r\n    | extend Detail = case(Health == 'Starting', 'Started within the grace period, waiting for the first heartbeat',\r\n                           Power != 'Running', strcat('VM is ', tolower(Power)),\r\n                           isnull(LastHeartbeat), 'Running, no AMA heartbeat in 24h',\r\n                           strcat('Running, last heartbeat ', tostring(MinutesSince), ' min ago'))\r\n    | project VmId, VM, SubscriptionId, ResourceGroup, Power, Health, LastBoot, LastHeartbeat, MinutesSince, Detail;\r\nstate\r\n| summarize Running = sum(iff(Power == 'Running', 1, 0)), Healthy = sum(iff(Health == 'Healthy', 1, 0)),\r\n            Unhealthy = sum(iff(Health == 'Unhealthy', 1, 0)), Starting = sum(iff(Health == 'Starting', 1, 0)),\r\n            Deallocated = sum(iff(Power == 'Deallocated', 1, 0)), Total = count()\n| project Title = 'Deallocated', Subtitle = 'VMs currently deallocated', Count = Deallocated",
-        "crossComponentResources": [
-          "{Workspace}"
-        ],
         "size": 4,
-        "version": "KqlItem/1.0",
         "queryType": 0
       },
-      "name": "deallocated-count",
       "customWidth": "20"
     },
     {
       "type": 3,
+      "name": "health-timeline",
       "content": {
         "resourceType": "microsoft.operationalinsights/workspaces",
+        "size": 0,
+        "queryType": 0,
         "chartSettings": {
           "seriesLabelSettings": [
             {
@@ -345,98 +348,58 @@
             }
           ]
         },
-        "query": "let Grace = {StartupGraceMin};\r\nlet wStart = now() - {ChartHours}h;\r\n// Bucket size: threshold, widened for long ranges (max. ~300 points)\r\nlet Bk = max_of({ThresholdMin}, toint(ceiling((now() - wStart) / 1m / 300.0)));\r\nlet nowB = tolong(now()) / 600000000 / Bk;\r\nlet firstB = tolong(wStart) / 600000000 / Bk;\r\nlet m2000 = tolong(datetime(2000-01-01)) / 600000000;\r\nlet current = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").Resources\r\n        | where type =~ 'microsoft.compute/virtualmachines'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | summarize RunningNow = sum(iff(tostring(properties.extended.instanceView.powerState.code) =~ 'PowerState/running', 1, 0)), TotalNow = count()\r\n        | extend k = 1) on k\r\n    | project k, RunningNow, TotalNow;\r\n// Power-state changes + create/delete from ARG change history (14 days), packed per day as one number per event:\r\n// E = VM hash * 100000 + minute of day * 16 + NewRun * 8 + PrevRun * 4 + (1 = create, 2 = delete).\r\n// Only events touching the running state are sent; an unknown previous state is treated as unchanged.\r\nlet ev = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").resourcechanges\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.targetResourceType) =~ 'microsoft.compute/virtualmachines'\r\n        | extend C = tostring(properties.changeType), Ts = todatetime(properties.changeAttributes.timestamp),\r\n                 NewP = tostring(properties.changes['properties.extended.instanceView.powerState.code'].newValue),\r\n                 PrevP = tostring(properties.changes['properties.extended.instanceView.powerState.code'].previousValue)\r\n        | where Ts >= ago({ChartHours}h) - {StartupGraceMin}m - {ThresholdMin}m\r\n        | extend Life = case(C == 'Create', 1, C == 'Delete', 2, 0)\r\n        | extend NewRun = iff(NewP =~ 'PowerState/running', 1, 0)\r\n        | extend PrevRun = case(Life == 1, 0, isempty(PrevP), NewRun, PrevP =~ 'PowerState/running', 1, 0)\r\n        | where Life > 0 or (isnotempty(NewP) and (NewRun == 1 or PrevRun == 1))\r\n        | extend M = tolong(Ts) / 600000000\r\n        | extend D = M / 1440\r\n        | summarize L = make_list(hash(tolower(tostring(properties.targetResourceId)), 1000000000) * 100000 + (M % 1440) * 16 + NewRun * 8 + PrevRun * 4 + Life) by D\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(long)\r\n    | extend Vm = L / 100000, R = L % 100000\r\n    | project Vm, M = D * 1440 + R / 16, NewRun = iff(R % 16 >= 8, 1, 0), PrevRun = iff(R % 8 >= 4, 1, 0), Life = R % 4\r\n    // Deleted VMs are no longer running; state before a VM's first event = its previous value\r\n    | extend NewRun = iff(Life == 2, 0, NewRun)\r\n    | order by Vm asc, M asc\r\n    | extend Before = iff(prev(Vm) == Vm, prev(NewRun), PrevRun)\r\n    | project M, Up = iff(NewRun > Before, 1, 0), Down = iff(NewRun < Before, 1, 0), Cr = iff(Life == 1, 1, 0), De = iff(Life == 2, 1, 0);\r\nlet net = ev | summarize NetRun = sum(Up - Down), NetAll = sum(Cr - De) by B = M / Bk;\r\n// Power-ons count as \"Starting\" for every bucket that ends within the grace period after them\r\nlet starting = ev\r\n    | where Up == 1\r\n    | extend Bs = range(M / Bk, (M + Grace) / Bk - 1, 1)\r\n    | mv-expand Bs to typeof(long)\r\n    | summarize Starting = count() by B = Bs;\r\nlet healthy = Heartbeat\r\n    | where TimeGenerated >= wStart - {ThresholdMin}m\r\n    | where Category == 'Azure Monitor Agent' and _ResourceId has '/providers/microsoft.compute/virtualmachines/'\n    | where '{Subscription}' == '*' or _ResourceId startswith strcat('/subscriptions/', '{Subscription}', '/')\n    | where '{ResourceGroup}' == '*' or _ResourceId contains strcat('/resourcegroups/', '{ResourceGroup}', '/')\r\n    | summarize by B = tolong(TimeGenerated) / 600000000 / Bk, _ResourceId\r\n    | summarize Healthy = count() by B;\r\nrange B from firstB to nowB step 1\r\n| join kind=leftouter net on B\r\n| order by B desc\r\n| extend Cum = row_cumsum(coalesce(NetRun, 0)), CumAll = row_cumsum(coalesce(NetAll, 0))\r\n| extend AfterRun = Cum - coalesce(NetRun, 0), AfterAll = CumAll - coalesce(NetAll, 0)\r\n| where B < nowB\r\n| extend k = 1\r\n| join kind=inner current on k\r\n| join kind=leftouter healthy on B\r\n| join kind=leftouter starting on B\r\n| extend Running = max_of(0, RunningNow - AfterRun), All = max_of(0, TotalNow - AfterAll)\r\n| extend Healthy = min_of(coalesce(Healthy, 0), Running)\r\n| extend Starting = min_of(coalesce(Starting, 0), Running - Healthy)\r\n| project TimeGenerated = datetime(2000-01-01) + ((B + 1) * Bk - m2000) * 1m,\r\n          Running, Healthy, Unhealthy = Running - Healthy - Starting, Starting, Deallocated = max_of(0, All - Running)\r\n| order by TimeGenerated asc\n| project TimeGenerated, Running, Healthy, Unhealthy, Deallocated, Starting",
-        "visualization": "linechart",
         "title": "Running VMs: healthy vs. unhealthy, plus deallocated (bucket = threshold, wider for long ranges)",
-        "crossComponentResources": [
-          "{Workspace}"
-        ],
-        "version": "KqlItem/1.0",
-        "queryType": 0,
         "timeContext": {
           "durationMs": 1296000000
         },
-        "size": 0
-      },
-      "name": "health-timeline"
-    },
-    {
-      "type": 3,
-      "content": {
-        "timeContext": {
-          "durationMs": 86400000
-        },
-        "resourceType": "microsoft.operationalinsights/workspaces",
-        "noDataMessageStyle": 3,
-        "tileSettings": {
-          "showBorder": true,
-          "subtitleContent": {
-            "columnMatch": "Detail"
-          },
-          "size": "auto",
-          "titleContent": {
-            "columnMatch": "VM",
-            "formatter": 1
-          },
-          "leftContent": {
-            "formatter": 18,
-            "formatOptions": {
-              "thresholdsOptions": "icons",
-              "thresholdsGrid": [
-                {
-                  "thresholdValue": null,
-                  "operator": "Default",
-                  "text": "",
-                  "representation": "4"
-                }
-              ]
-            },
-            "columnMatch": "Health"
-          },
-          "secondaryContent": {
-            "columnMatch": "ResourceGroup"
-          }
-        },
-        "visualization": "tiles",
-        "noDataMessage": "All running VMs (past startup grace) sent an AMA heartbeat within the threshold.",
-        "query": "let T = {ThresholdMin}m;\r\nlet Grace = {StartupGraceMin}m;\r\nlet vms = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").Resources\r\n        | where type =~ 'microsoft.compute/virtualmachines'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | extend PS = tostring(properties.extended.instanceView.powerState.code)\r\n        | extend P = case(PS =~ 'PowerState/running', 'R', PS =~ 'PowerState/deallocated', 'D', PS =~ 'PowerState/stopped', 'S', 'O'),\r\n                 N = iff(todatetime(properties.timeCreated) > ago({StartupGraceMin}m), '1', '0')\r\n        | summarize L = make_list(strcat(P, N, id))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | extend Id = substring(L, 2)\r\n    | extend Parts = split(Id, '/')\r\n    | project VmId = tolower(Id), VM = tostring(Parts[8]), ResourceGroup = tolower(tostring(Parts[4])), SubscriptionId = tostring(Parts[2]),\r\n              Power = case(L startswith 'R', 'Running', L startswith 'D', 'Deallocated', L startswith 'S', 'Stopped', 'Other'),\r\n              NewVm = substring(L, 1, 1) == '1';\r\n// Any start/restart within the grace period (changes + current annotation), packed into one row\r\nlet boots = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresourcechanges\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.targetResourceType) =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where tostring(properties.changes['properties.annotationName'].newValue) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.changeAttributes.timestamp)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(tostring(split(L, '|')[1]), '/providers/microsoft.resourcehealth/')[0]);\r\nlet bootsNow = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresources\r\n        | where type =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.annotationName) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.occurredTime)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(L, '|')[1]);\r\nlet recentBoot = union boots, bootsNow | summarize LastBoot = max(LastBoot) by VmId;\r\nlet lastHb = Heartbeat\r\n    | where TimeGenerated > ago(1d)\r\n    | where Category == 'Azure Monitor Agent' and _ResourceId has '/providers/microsoft.compute/virtualmachines/'\n    | where '{Subscription}' == '*' or _ResourceId startswith strcat('/subscriptions/', '{Subscription}', '/')\n    | where '{ResourceGroup}' == '*' or _ResourceId contains strcat('/resourcegroups/', '{ResourceGroup}', '/')\r\n    | summarize LastHeartbeat = max(TimeGenerated) by VmId = tolower(_ResourceId);\r\nlet state = vms\r\n    | join kind=leftouter recentBoot on VmId\r\n    | join kind=leftouter lastHb on VmId\r\n    | extend InGrace = NewVm or isnotnull(LastBoot)\r\n    | extend MinutesSince = iff(isnull(LastHeartbeat), real(null), round((now() - LastHeartbeat) / 1m, 1))\r\n    | extend Health = case(Power != 'Running', Power,\r\n                           isnotnull(LastHeartbeat) and LastHeartbeat >= ago(T), 'Healthy',\r\n                           InGrace, 'Starting', 'Unhealthy')\r\n    | extend Detail = case(Health == 'Starting', 'Started within the grace period, waiting for the first heartbeat',\r\n                           Power != 'Running', strcat('VM is ', tolower(Power)),\r\n                           isnull(LastHeartbeat), 'Running, no AMA heartbeat in 24h',\r\n                           strcat('Running, last heartbeat ', tostring(MinutesSince), ' min ago'))\r\n    | project VmId, VM, SubscriptionId, ResourceGroup, Power, Health, LastBoot, LastHeartbeat, MinutesSince, Detail;\r\nstate\r\n| where Health == 'Unhealthy'\r\n| order by MinutesSince desc nulls first, VM asc\r\n| take 100\r\n| project VM, Health, Detail, ResourceGroup",
+        "query": "let Grace = {StartupGraceMin};\r\nlet wStart = now() - {ChartHours}h;\r\n// Bucket size: threshold, widened for long ranges (max. ~300 points)\r\nlet Bk = max_of({ThresholdMin}, toint(ceiling((now() - wStart) / 1m / 300.0)));\r\nlet nowB = tolong(now()) / 600000000 / Bk;\r\nlet firstB = tolong(wStart) / 600000000 / Bk;\r\nlet m2000 = tolong(datetime(2000-01-01)) / 600000000;\r\nlet current = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").Resources\r\n        | where type =~ 'microsoft.compute/virtualmachines'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | summarize RunningNow = sum(iff(tostring(properties.extended.instanceView.powerState.code) =~ 'PowerState/running', 1, 0)), TotalNow = count()\r\n        | extend k = 1) on k\r\n    | project k, RunningNow, TotalNow;\r\n// Power-state changes + create/delete from ARG change history (14 days), packed per day as one number per event:\r\n// E = VM hash * 100000 + minute of day * 16 + NewRun * 8 + PrevRun * 4 + (1 = create, 2 = delete).\r\n// Only events touching the running state are sent; an unknown previous state is treated as unchanged.\r\nlet ev = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").resourcechanges\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.targetResourceType) =~ 'microsoft.compute/virtualmachines'\r\n        | extend C = tostring(properties.changeType), Ts = todatetime(properties.changeAttributes.timestamp),\r\n                 NewP = tostring(properties.changes['properties.extended.instanceView.powerState.code'].newValue),\r\n                 PrevP = tostring(properties.changes['properties.extended.instanceView.powerState.code'].previousValue)\r\n        | where Ts >= ago({ChartHours}h) - {StartupGraceMin}m - {ThresholdMin}m\r\n        | extend Life = case(C == 'Create', 1, C == 'Delete', 2, 0)\r\n        | extend NewRun = iff(NewP =~ 'PowerState/running', 1, 0)\r\n        | extend PrevRun = case(Life == 1, 0, isempty(PrevP), NewRun, PrevP =~ 'PowerState/running', 1, 0)\r\n        | where Life > 0 or (isnotempty(NewP) and (NewRun == 1 or PrevRun == 1))\r\n        | extend M = tolong(Ts) / 600000000\r\n        | extend D = M / 1440\r\n        | summarize L = make_list(hash(tolower(tostring(properties.targetResourceId)), 1000000000) * 100000 + (M % 1440) * 16 + NewRun * 8 + PrevRun * 4 + Life) by D\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(long)\r\n    | extend Vm = L / 100000, R = L % 100000\r\n    | project Vm, M = D * 1440 + R / 16, NewRun = iff(R % 16 >= 8, 1, 0), PrevRun = iff(R % 8 >= 4, 1, 0), Life = R % 4\r\n    // Deleted VMs are no longer running; state before a VM's first event = its previous value\r\n    | extend NewRun = iff(Life == 2, 0, NewRun)\r\n    | order by Vm asc, M asc\r\n    | extend Before = iff(prev(Vm) == Vm, prev(NewRun), PrevRun)\r\n    | project M, Up = iff(NewRun > Before, 1, 0), Down = iff(NewRun < Before, 1, 0), Cr = iff(Life == 1, 1, 0), De = iff(Life == 2, 1, 0);\r\nlet net = ev | summarize NetRun = sum(Up - Down), NetAll = sum(Cr - De) by B = M / Bk;\r\n// Power-ons count as \"Starting\" for every bucket that ends within the grace period after them\r\nlet starting = ev\r\n    | where Up == 1\r\n    | extend Bs = range(M / Bk, (M + Grace) / Bk - 1, 1)\r\n    | mv-expand Bs to typeof(long)\r\n    | summarize Starting = count() by B = Bs;\r\nlet healthy = Heartbeat\r\n    | where TimeGenerated >= wStart - {ThresholdMin}m\r\n    | where Category == 'Azure Monitor Agent' and _ResourceId has '/providers/microsoft.compute/virtualmachines/'\n    | where '{Subscription}' == '*' or _ResourceId startswith strcat('/subscriptions/', '{Subscription}', '/')\n    | where '{ResourceGroup}' == '*' or _ResourceId contains strcat('/resourcegroups/', '{ResourceGroup}', '/')\r\n    | summarize by B = tolong(TimeGenerated) / 600000000 / Bk, _ResourceId\r\n    | summarize Healthy = count() by B;\r\nrange B from firstB to nowB step 1\r\n| join kind=leftouter net on B\r\n| order by B desc\r\n| extend Cum = row_cumsum(coalesce(NetRun, 0)), CumAll = row_cumsum(coalesce(NetAll, 0))\r\n| extend AfterRun = Cum - coalesce(NetRun, 0), AfterAll = CumAll - coalesce(NetAll, 0)\r\n| where B < nowB\r\n| extend k = 1\r\n| join kind=inner current on k\r\n| join kind=leftouter healthy on B\r\n| join kind=leftouter starting on B\r\n| extend Running = max_of(0, RunningNow - AfterRun), All = max_of(0, TotalNow - AfterAll)\r\n| extend Healthy = min_of(coalesce(Healthy, 0), Running)\r\n| extend Starting = min_of(coalesce(Starting, 0), Running - Healthy)\r\n| project TimeGenerated = datetime(2000-01-01) + ((B + 1) * Bk - m2000) * 1m,\r\n          Running, Healthy, Unhealthy = Running - Healthy - Starting, Starting, Deallocated = max_of(0, All - Running)\r\n| order by TimeGenerated asc\n| project TimeGenerated, Running, Healthy, Unhealthy, Deallocated, Starting",
+        "visualization": "linechart",
         "crossComponentResources": [
           "{Workspace}"
         ],
-        "size": 0,
-        "version": "KqlItem/1.0",
-        "queryType": 0,
-        "title": "Unhealthy VMs (top 100) - running, past startup grace, no AMA heartbeat for more than {ThresholdMin} min"
-      },
-      "name": "unhealthy-vms"
+        "version": "KqlItem/1.0"
+      }
     },
     {
       "type": 3,
+      "name": "groups",
       "content": {
+        "title": "Health grouped by resource group",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
         "timeContext": {
           "durationMs": 86400000
         },
+        "query": "let T = {ThresholdMin}m;\r\nlet Grace = {StartupGraceMin}m;\r\nlet vms = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").Resources\r\n        | where type =~ 'microsoft.compute/virtualmachines'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | extend PS = tostring(properties.extended.instanceView.powerState.code)\r\n        | extend P = case(PS =~ 'PowerState/running', 'R', PS =~ 'PowerState/deallocated', 'D', PS =~ 'PowerState/stopped', 'S', 'O'),\r\n                 N = iff(todatetime(properties.timeCreated) > ago({StartupGraceMin}m), '1', '0')\r\n        | summarize L = make_list(strcat(P, N, id))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | extend Id = substring(L, 2)\r\n    | extend Parts = split(Id, '/')\r\n    | project VmId = tolower(Id), VM = tostring(Parts[8]), ResourceGroup = tolower(tostring(Parts[4])), SubscriptionId = tostring(Parts[2]),\r\n              Power = case(L startswith 'R', 'Running', L startswith 'D', 'Deallocated', L startswith 'S', 'Stopped', 'Other'),\r\n              NewVm = substring(L, 1, 1) == '1';\r\n// Any start/restart within the grace period (changes + current annotation), packed into one row\r\nlet boots = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresourcechanges\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.targetResourceType) =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where tostring(properties.changes['properties.annotationName'].newValue) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.changeAttributes.timestamp)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(tostring(split(L, '|')[1]), '/providers/microsoft.resourcehealth/')[0]);\r\nlet bootsNow = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresources\r\n        | where type =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.annotationName) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.occurredTime)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(L, '|')[1]);\r\nlet recentBoot = union boots, bootsNow | summarize LastBoot = max(LastBoot) by VmId;\r\nlet lastHb = Heartbeat\r\n    | where TimeGenerated > ago(1d)\r\n    | where Category == 'Azure Monitor Agent' and _ResourceId has '/providers/microsoft.compute/virtualmachines/'\n    | where '{Subscription}' == '*' or _ResourceId startswith strcat('/subscriptions/', '{Subscription}', '/')\n    | where '{ResourceGroup}' == '*' or _ResourceId contains strcat('/resourcegroups/', '{ResourceGroup}', '/')\r\n    | summarize LastHeartbeat = max(TimeGenerated) by VmId = tolower(_ResourceId);\r\nlet state = vms\r\n    | join kind=leftouter recentBoot on VmId\r\n    | join kind=leftouter lastHb on VmId\r\n    | extend InGrace = NewVm or isnotnull(LastBoot)\r\n    | extend MinutesSince = iff(isnull(LastHeartbeat), real(null), round((now() - LastHeartbeat) / 1m, 1))\r\n    | extend Health = case(Power != 'Running', Power,\r\n                           isnotnull(LastHeartbeat) and LastHeartbeat >= ago(T), 'Healthy',\r\n                           InGrace, 'Starting', 'Unhealthy')\r\n    | extend Detail = case(Health == 'Starting', 'Started within the grace period, waiting for the first heartbeat',\r\n                           Power != 'Running', strcat('VM is ', tolower(Power)),\r\n                           isnull(LastHeartbeat), 'Running, no AMA heartbeat in 24h',\r\n                           strcat('Running, last heartbeat ', tostring(MinutesSince), ' min ago'))\r\n    | project VmId, VM, SubscriptionId, ResourceGroup, Power, Health, LastBoot, LastHeartbeat, MinutesSince, Detail;\r\nstate\r\n| summarize Total = count(), Running = sum(iff(Power == 'Running', 1, 0)), Healthy = sum(iff(Health == 'Healthy', 1, 0)),\r\n            Unhealthy = sum(iff(Health == 'Unhealthy', 1, 0)), Starting = sum(iff(Health == 'Starting', 1, 0)),\r\n            Deallocated = sum(iff(Power == 'Deallocated', 1, 0)) by SubscriptionId, ResourceGroup\r\n| extend UnhealthyPct = iff(Running == 0, 0.0, round(100.0 * Unhealthy / Running, 1))\r\n| order by Unhealthy desc, Running desc\n| project ResourceGroup, SubscriptionId, Running, Healthy, Unhealthy, UnhealthyPct, Starting, Deallocated, Total",
+        "version": "KqlItem/1.0",
         "resourceType": "microsoft.operationalinsights/workspaces",
-        "visualization": "table",
         "gridSettings": {
+          "filter": true,
+          "labelSettings": [
+            {
+              "label": "Unhealthy % of running",
+              "columnId": "UnhealthyPct"
+            }
+          ],
           "formatters": [
             {
-              "formatter": 4,
               "formatOptions": {
                 "palette": "green"
               },
-              "columnMatch": "Healthy"
+              "columnMatch": "Healthy",
+              "formatter": 4
             },
             {
-              "formatter": 4,
               "formatOptions": {
                 "palette": "red"
               },
-              "columnMatch": "Unhealthy"
+              "columnMatch": "Unhealthy",
+              "formatter": 4
             },
             {
-              "formatter": 0,
               "columnMatch": "UnhealthyPct",
+              "formatter": 0,
               "numberFormat": {
                 "options": {
                   "style": "decimal",
@@ -446,77 +409,79 @@
               }
             },
             {
-              "formatter": 4,
               "formatOptions": {
                 "palette": "purple"
               },
-              "columnMatch": "Deallocated"
-            }
-          ],
-          "filter": true,
-          "labelSettings": [
-            {
-              "label": "Unhealthy % of running",
-              "columnId": "UnhealthyPct"
+              "columnMatch": "Deallocated",
+              "formatter": 4
             }
           ]
         },
-        "title": "Health grouped by resource group",
-        "crossComponentResources": [
-          "{Workspace}"
-        ],
-        "query": "let T = {ThresholdMin}m;\r\nlet Grace = {StartupGraceMin}m;\r\nlet vms = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").Resources\r\n        | where type =~ 'microsoft.compute/virtualmachines'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | extend PS = tostring(properties.extended.instanceView.powerState.code)\r\n        | extend P = case(PS =~ 'PowerState/running', 'R', PS =~ 'PowerState/deallocated', 'D', PS =~ 'PowerState/stopped', 'S', 'O'),\r\n                 N = iff(todatetime(properties.timeCreated) > ago({StartupGraceMin}m), '1', '0')\r\n        | summarize L = make_list(strcat(P, N, id))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | extend Id = substring(L, 2)\r\n    | extend Parts = split(Id, '/')\r\n    | project VmId = tolower(Id), VM = tostring(Parts[8]), ResourceGroup = tolower(tostring(Parts[4])), SubscriptionId = tostring(Parts[2]),\r\n              Power = case(L startswith 'R', 'Running', L startswith 'D', 'Deallocated', L startswith 'S', 'Stopped', 'Other'),\r\n              NewVm = substring(L, 1, 1) == '1';\r\n// Any start/restart within the grace period (changes + current annotation), packed into one row\r\nlet boots = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresourcechanges\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.targetResourceType) =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where tostring(properties.changes['properties.annotationName'].newValue) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.changeAttributes.timestamp)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(tostring(split(L, '|')[1]), '/providers/microsoft.resourcehealth/')[0]);\r\nlet bootsNow = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresources\r\n        | where type =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.annotationName) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.occurredTime)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(L, '|')[1]);\r\nlet recentBoot = union boots, bootsNow | summarize LastBoot = max(LastBoot) by VmId;\r\nlet lastHb = Heartbeat\r\n    | where TimeGenerated > ago(1d)\r\n    | where Category == 'Azure Monitor Agent' and _ResourceId has '/providers/microsoft.compute/virtualmachines/'\n    | where '{Subscription}' == '*' or _ResourceId startswith strcat('/subscriptions/', '{Subscription}', '/')\n    | where '{ResourceGroup}' == '*' or _ResourceId contains strcat('/resourcegroups/', '{ResourceGroup}', '/')\r\n    | summarize LastHeartbeat = max(TimeGenerated) by VmId = tolower(_ResourceId);\r\nlet state = vms\r\n    | join kind=leftouter recentBoot on VmId\r\n    | join kind=leftouter lastHb on VmId\r\n    | extend InGrace = NewVm or isnotnull(LastBoot)\r\n    | extend MinutesSince = iff(isnull(LastHeartbeat), real(null), round((now() - LastHeartbeat) / 1m, 1))\r\n    | extend Health = case(Power != 'Running', Power,\r\n                           isnotnull(LastHeartbeat) and LastHeartbeat >= ago(T), 'Healthy',\r\n                           InGrace, 'Starting', 'Unhealthy')\r\n    | extend Detail = case(Health == 'Starting', 'Started within the grace period, waiting for the first heartbeat',\r\n                           Power != 'Running', strcat('VM is ', tolower(Power)),\r\n                           isnull(LastHeartbeat), 'Running, no AMA heartbeat in 24h',\r\n                           strcat('Running, last heartbeat ', tostring(MinutesSince), ' min ago'))\r\n    | project VmId, VM, SubscriptionId, ResourceGroup, Power, Health, LastBoot, LastHeartbeat, MinutesSince, Detail;\r\nstate\r\n| summarize Total = count(), Running = sum(iff(Power == 'Running', 1, 0)), Healthy = sum(iff(Health == 'Healthy', 1, 0)),\r\n            Unhealthy = sum(iff(Health == 'Unhealthy', 1, 0)), Starting = sum(iff(Health == 'Starting', 1, 0)),\r\n            Deallocated = sum(iff(Power == 'Deallocated', 1, 0)) by SubscriptionId, ResourceGroup\r\n| extend UnhealthyPct = iff(Running == 0, 0.0, round(100.0 * Unhealthy / Running, 1))\r\n| order by Unhealthy desc, Running desc\n| project ResourceGroup, SubscriptionId, Running, Healthy, Unhealthy, UnhealthyPct, Starting, Deallocated, Total",
+        "visualization": "table",
         "size": 0,
-        "version": "KqlItem/1.0",
         "queryType": 0
-      },
-      "name": "groups"
+      }
     },
     {
       "type": 3,
+      "name": "vm-details",
       "content": {
+        "title": "Running VMs that are not healthy (unhealthy + starting, max. 5000 - use the groups table to narrow the scope)",
+        "crossComponentResources": [
+          "{Workspace}"
+        ],
         "timeContext": {
           "durationMs": 86400000
         },
+        "query": "let T = {ThresholdMin}m;\r\nlet Grace = {StartupGraceMin}m;\r\nlet vms = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").Resources\r\n        | where type =~ 'microsoft.compute/virtualmachines'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | extend PS = tostring(properties.extended.instanceView.powerState.code)\r\n        | extend P = case(PS =~ 'PowerState/running', 'R', PS =~ 'PowerState/deallocated', 'D', PS =~ 'PowerState/stopped', 'S', 'O'),\r\n                 N = iff(todatetime(properties.timeCreated) > ago({StartupGraceMin}m), '1', '0')\r\n        | summarize L = make_list(strcat(P, N, id))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | extend Id = substring(L, 2)\r\n    | extend Parts = split(Id, '/')\r\n    | project VmId = tolower(Id), VM = tostring(Parts[8]), ResourceGroup = tolower(tostring(Parts[4])), SubscriptionId = tostring(Parts[2]),\r\n              Power = case(L startswith 'R', 'Running', L startswith 'D', 'Deallocated', L startswith 'S', 'Stopped', 'Other'),\r\n              NewVm = substring(L, 1, 1) == '1';\r\n// Any start/restart within the grace period (changes + current annotation), packed into one row\r\nlet boots = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresourcechanges\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.targetResourceType) =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where tostring(properties.changes['properties.annotationName'].newValue) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.changeAttributes.timestamp)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(tostring(split(L, '|')[1]), '/providers/microsoft.resourcehealth/')[0]);\r\nlet bootsNow = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresources\r\n        | where type =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.annotationName) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.occurredTime)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(L, '|')[1]);\r\nlet recentBoot = union boots, bootsNow | summarize LastBoot = max(LastBoot) by VmId;\r\nlet lastHb = Heartbeat\r\n    | where TimeGenerated > ago(1d)\r\n    | where Category == 'Azure Monitor Agent' and _ResourceId has '/providers/microsoft.compute/virtualmachines/'\n    | where '{Subscription}' == '*' or _ResourceId startswith strcat('/subscriptions/', '{Subscription}', '/')\n    | where '{ResourceGroup}' == '*' or _ResourceId contains strcat('/resourcegroups/', '{ResourceGroup}', '/')\r\n    | summarize LastHeartbeat = max(TimeGenerated) by VmId = tolower(_ResourceId);\r\nlet state = vms\r\n    | join kind=leftouter recentBoot on VmId\r\n    | join kind=leftouter lastHb on VmId\r\n    | extend InGrace = NewVm or isnotnull(LastBoot)\r\n    | extend MinutesSince = iff(isnull(LastHeartbeat), real(null), round((now() - LastHeartbeat) / 1m, 1))\r\n    | extend Health = case(Power != 'Running', Power,\r\n                           isnotnull(LastHeartbeat) and LastHeartbeat >= ago(T), 'Healthy',\r\n                           InGrace, 'Starting', 'Unhealthy')\r\n    | extend Detail = case(Health == 'Starting', 'Started within the grace period, waiting for the first heartbeat',\r\n                           Power != 'Running', strcat('VM is ', tolower(Power)),\r\n                           isnull(LastHeartbeat), 'Running, no AMA heartbeat in 24h',\r\n                           strcat('Running, last heartbeat ', tostring(MinutesSince), ' min ago'))\r\n    | project VmId, VM, SubscriptionId, ResourceGroup, Power, Health, LastBoot, LastHeartbeat, MinutesSince, Detail;\r\nstate\r\n| where Health in ('Unhealthy', 'Starting')\r\n| order by Health desc, VM asc\r\n| take 5000\r\n| project Health, VM, ResourceGroup, SubscriptionId, LastBoot, LastHeartbeat, MinutesSince, Detail",
+        "noDataMessage": "All running VMs are healthy.",
+        "version": "KqlItem/1.0",
         "resourceType": "microsoft.operationalinsights/workspaces",
         "gridSettings": {
+          "filter": true,
+          "labelSettings": [
+            {
+              "label": "Heartbeat age (min)",
+              "columnId": "MinutesSince"
+            }
+          ],
           "formatters": [
             {
-              "formatter": 18,
               "formatOptions": {
                 "thresholdsOptions": "icons",
                 "thresholdsGrid": [
                   {
-                    "thresholdValue": "Unhealthy",
                     "operator": "==",
+                    "thresholdValue": "Unhealthy",
                     "text": "{0}{1}",
                     "representation": "4"
                   },
                   {
-                    "thresholdValue": "Starting",
                     "operator": "==",
+                    "thresholdValue": "Starting",
                     "text": "{0}{1}",
                     "representation": "pending"
                   },
                   {
-                    "thresholdValue": "Healthy",
                     "operator": "==",
+                    "thresholdValue": "Healthy",
                     "text": "{0}{1}",
                     "representation": "success"
                   },
                   {
-                    "thresholdValue": null,
                     "operator": "Default",
+                    "thresholdValue": null,
                     "text": "{0}{1}",
                     "representation": "Unknown"
                   }
                 ]
               },
-              "columnMatch": "Health"
+              "columnMatch": "Health",
+              "formatter": 18
             },
             {
-              "formatter": 0,
               "columnMatch": "MinutesSince",
+              "formatter": 0,
               "numberFormat": {
                 "options": {
                   "style": "decimal",
@@ -525,27 +490,12 @@
                 "unit": 0
               }
             }
-          ],
-          "filter": true,
-          "labelSettings": [
-            {
-              "label": "Heartbeat age (min)",
-              "columnId": "MinutesSince"
-            }
           ]
         },
         "visualization": "table",
-        "noDataMessage": "All running VMs are healthy.",
-        "query": "let T = {ThresholdMin}m;\r\nlet Grace = {StartupGraceMin}m;\r\nlet vms = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").Resources\r\n        | where type =~ 'microsoft.compute/virtualmachines'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | extend PS = tostring(properties.extended.instanceView.powerState.code)\r\n        | extend P = case(PS =~ 'PowerState/running', 'R', PS =~ 'PowerState/deallocated', 'D', PS =~ 'PowerState/stopped', 'S', 'O'),\r\n                 N = iff(todatetime(properties.timeCreated) > ago({StartupGraceMin}m), '1', '0')\r\n        | summarize L = make_list(strcat(P, N, id))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | extend Id = substring(L, 2)\r\n    | extend Parts = split(Id, '/')\r\n    | project VmId = tolower(Id), VM = tostring(Parts[8]), ResourceGroup = tolower(tostring(Parts[4])), SubscriptionId = tostring(Parts[2]),\r\n              Power = case(L startswith 'R', 'Running', L startswith 'D', 'Deallocated', L startswith 'S', 'Stopped', 'Other'),\r\n              NewVm = substring(L, 1, 1) == '1';\r\n// Any start/restart within the grace period (changes + current annotation), packed into one row\r\nlet boots = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresourcechanges\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.targetResourceType) =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where tostring(properties.changes['properties.annotationName'].newValue) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.changeAttributes.timestamp)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(tostring(split(L, '|')[1]), '/providers/microsoft.resourcehealth/')[0]);\r\nlet bootsNow = datatable(k:int)[1]\r\n    | join kind=inner hint.remote=left (arg(\"\").healthresources\r\n        | where type =~ 'microsoft.resourcehealth/resourceannotations'\r\n        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'\n        | where '{ResourceGroup}' == '*' or resourceGroup =~ '{ResourceGroup}'\r\n        | where tostring(properties.annotationName) in ('VirtualMachineStartInitiatedByControlPlane','VirtualMachineAllocated','VirtualMachineRestarted','VirtualMachineRebootInitiatedByControlPlane','VirtualMachineRebootInitiatedForPlannedMaintenance','VirtualMachineRedeployInitiatedByControlPlane','VirtualMachineHostRebootedForRepair','VirtualMachineMigrationInitiatedForRepair','VirtualMachineCrashed','VirtualMachineHostCrashed')\r\n        | extend Ts = todatetime(properties.occurredTime)\r\n        | where Ts > ago({StartupGraceMin}m)\r\n        | summarize L = make_list(strcat(tostring(Ts), '|', tolower(tostring(properties.targetResourceId))))\r\n        | extend k = 1) on k\r\n    | mv-expand L to typeof(string)\r\n    | project LastBoot = todatetime(tostring(split(L, '|')[0])), VmId = tostring(split(L, '|')[1]);\r\nlet recentBoot = union boots, bootsNow | summarize LastBoot = max(LastBoot) by VmId;\r\nlet lastHb = Heartbeat\r\n    | where TimeGenerated > ago(1d)\r\n    | where Category == 'Azure Monitor Agent' and _ResourceId has '/providers/microsoft.compute/virtualmachines/'\n    | where '{Subscription}' == '*' or _ResourceId startswith strcat('/subscriptions/', '{Subscription}', '/')\n    | where '{ResourceGroup}' == '*' or _ResourceId contains strcat('/resourcegroups/', '{ResourceGroup}', '/')\r\n    | summarize LastHeartbeat = max(TimeGenerated) by VmId = tolower(_ResourceId);\r\nlet state = vms\r\n    | join kind=leftouter recentBoot on VmId\r\n    | join kind=leftouter lastHb on VmId\r\n    | extend InGrace = NewVm or isnotnull(LastBoot)\r\n    | extend MinutesSince = iff(isnull(LastHeartbeat), real(null), round((now() - LastHeartbeat) / 1m, 1))\r\n    | extend Health = case(Power != 'Running', Power,\r\n                           isnotnull(LastHeartbeat) and LastHeartbeat >= ago(T), 'Healthy',\r\n                           InGrace, 'Starting', 'Unhealthy')\r\n    | extend Detail = case(Health == 'Starting', 'Started within the grace period, waiting for the first heartbeat',\r\n                           Power != 'Running', strcat('VM is ', tolower(Power)),\r\n                           isnull(LastHeartbeat), 'Running, no AMA heartbeat in 24h',\r\n                           strcat('Running, last heartbeat ', tostring(MinutesSince), ' min ago'))\r\n    | project VmId, VM, SubscriptionId, ResourceGroup, Power, Health, LastBoot, LastHeartbeat, MinutesSince, Detail;\r\nstate\r\n| where Health in ('Unhealthy', 'Starting')\r\n| order by Health desc, VM asc\r\n| take 5000\r\n| project Health, VM, ResourceGroup, SubscriptionId, LastBoot, LastHeartbeat, MinutesSince, Detail",
-        "crossComponentResources": [
-          "{Workspace}"
-        ],
         "size": 0,
-        "version": "KqlItem/1.0",
-        "queryType": 0,
-        "title": "Running VMs that are not healthy (unhealthy + starting, max. 5000 - use the groups table to narrow the scope)"
-      },
-      "name": "vm-details"
+        "queryType": 0
+      }
     }
   ],
   "fallbackResourceIds": [
