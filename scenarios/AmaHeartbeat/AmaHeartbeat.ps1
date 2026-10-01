@@ -64,7 +64,7 @@ let vms = datatable(k:int)[1]
     | mv-expand L to typeof(string)
     | extend Id = substring(L, 2)
     | extend Parts = split(Id, '/')
-    | project VmId = tolower(Id), VM = tostring(Parts[8]), ResourceGroup = tostring(Parts[4]), SubscriptionId = tostring(Parts[2]),
+    | project VmId = tolower(Id), VM = tostring(Parts[8]), ResourceGroup = tolower(tostring(Parts[4])), SubscriptionId = tostring(Parts[2]),
               Power = case(L startswith 'R', 'Running', L startswith 'D', 'Deallocated', L startswith 'S', 'Stopped', 'Other'),
               NewVm = substring(L, 1, 1) == '1';
 // Any start/restart within the grace period (changes + current annotation), packed into one row

@@ -12,8 +12,8 @@
         "resourceType": "Microsoft.OperationalInsights/workspaces",
         "options": {
           "filter": {
-            "location": "all",
-            "subscription": "all"
+            "subscription": "all",
+            "location": "all"
           }
         }
       },
@@ -30,8 +30,8 @@
         "name": "info",
         "type": "Microsoft.Common.InfoBox",
         "options": {
-          "text": "Only the workbook is deployed. It reads the existing Heartbeat table and Azure Resource Graph - no data collection is changed.",
-          "icon": "Info"
+          "icon": "Info",
+          "text": "Only the workbook is deployed. It reads the existing Heartbeat table and Azure Resource Graph - no data collection is changed."
         }
       }
     ],
