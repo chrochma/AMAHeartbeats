@@ -59,8 +59,8 @@ A running VM only counts as **unhealthy** after it has been up for longer than t
 | **Starting** | Started less than the grace period ago, with no heartbeat yet |
 | **Deallocated** | VMs that are currently deallocated or stopped |
 | **Health chart** | One line per group: **Running** (blue), **Healthy** (green), **Unhealthy** (red), **Deallocated** (gray) and Starting (purple). Buckets are the threshold size and widen for long ranges (max. about 300 points, e.g. 34 min for 7 days) |
-| **Groups** table | Per subscription and resource group: Total, Running, Healthy, Unhealthy, Unhealthy %, Starting, Deallocated. The worst groups are listed first |
-| Not-healthy grid | Unhealthy and starting VMs (max. 5,000), with last boot and last heartbeat |
+| **Groups** table | **Group health by** switch: **Resource group** (per subscription and RG) or **Subnet** (per VNet/subnet of the VM's primary NIC, with subnet NSG, NIC NSGs, route table). Columns: Running, Healthy, Unhealthy, Unhealthy %, *Unhealthy w/o AMA extension*, Starting, Deallocated. The worst groups are listed first. The subnet view adds an **Assessment** (see [Troubleshooting](#troubleshooting-many-unhealthy-vms)) |
+| Not-healthy grid | Unhealthy and starting VMs (max. 5,000), with subnet, AMA extension status, last boot and last heartbeat |
 
 Workbook parameters:
 - `Log Analytics workspace` (picker; standalone deployment: the selected workspace)
@@ -69,6 +69,7 @@ Workbook parameters:
 - `Startup grace (min)`
 - `Resource group` (default: the lab RG, `*` for the standalone workbook; `*` = all)
 - `Chart time range` (1 h to 14 days, fixed dropdown; locale independent, so it also works with German/European date formats in the browser)
+- `Group health by` (Resource group / Subnet) and `Subnet filter` (`*` = all, or part of a VNet/subnet name; filters the subnet table and the not-healthy grid)
 
 **No extra data is collected.** Power state, start events and power history come from Azure Resource Graph (`Resources`, `healthresources`, `healthresourcechanges`, `resourcechanges`), which is free and holds 14 days of history. Log Analytics reads them through `arg("")`, and the only table used is the `Heartbeat` table that AMA writes anyway. The workspace must receive heartbeats from every VM in scope.
 
@@ -77,6 +78,16 @@ Workbook parameters:
 - **Chart:** power-state changes from `resourcechanges` are replayed backwards from the current running count, so there's no VM × time grid. Healthy per bucket is the distinct count of VMs with a heartbeat, capped at Running.
 
 In a test with about 22,000 VMs, each box loaded in about 8 s, a 24 h chart in about 11 s, and a 7-day chart in about 18 s.
+
+### Troubleshooting many unhealthy VMs
+
+"Unhealthy" only means *running, but no heartbeat in **this** workspace*. Check, roughly in this order:
+
+1. **Scope vs. configuration.** Every running VM in the Subscription/RG scope is counted, so VMs without AMA or without a DCR that sends to the selected workspace all show as unhealthy. The *Unhealthy w/o AMA extension* column counts VMs without a successfully provisioned AMA extension. Also check that the DCR association exists and points to this workspace, and narrow the scope if needed.
+2. **Network path.** Switch to **Group health by: Subnet**. The Assessment column shows:
+   - *No healthy VM* (AMA installed): suspect the subnet path, e.g. an NSG/NIC NSG, UDR to a firewall/NVA, or a proxy that blocks the `AzureMonitor` service tag or `global.handler.control.monitor.azure.com`, `<region>.handler.control.monitor.azure.com`, `*.ods.opinsights.azure.com`, `*.ingest.monitor.azure.com`. Also check DNS / Private Link (AMPLS) resolution.
+   - *Mixed*: the path works, so check the affected VMs individually.
+3. **Per VM.** Look for missing managed identity, a stopped or failed agent service (`AzureMonitorAgent` / `azuremonitoragent`), a proxy not configured for AMA, clock skew, AV/EDR interference, or a hung guest OS (e.g. OOM). Use boot diagnostics / Serial Console, or the AMA Troubleshooter.
 ```mermaid
 flowchart LR
   VM[10x Linux VM + AMA] -- Heartbeat --> LAW[(Log Analytics)]

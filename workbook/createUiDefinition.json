@@ -30,8 +30,8 @@
         "name": "info",
         "type": "Microsoft.Common.InfoBox",
         "options": {
-          "icon": "Info",
-          "text": "Only the workbook is deployed. It reads the existing Heartbeat table and Azure Resource Graph - no data collection is changed."
+          "text": "Only the workbook is deployed. It reads the existing Heartbeat table and Azure Resource Graph - no data collection is changed.",
+          "icon": "Info"
         }
       }
     ],

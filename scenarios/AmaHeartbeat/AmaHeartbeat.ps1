@@ -184,8 +184,56 @@ range B from firstB to nowB step 1
 | order by TimeGenerated asc
 '@
 
+    # Diagnostics lookups, joined via hash(VmId) (same hash in ARG and Log Analytics), packed for the 1000-row arg() limit.
+    # ama: AMA extension per VM (A = provisioned successfully). nics: primary NIC subnet + NIC NSG. subnets: subnet NSG + route table.
+    $diag = & $expand @'
+let ama = datatable(k:int)[1]
+    | join kind=inner hint.remote=left (arg("").Resources
+        | where type =~ 'microsoft.compute/virtualmachines/extensions' and name in~ ('AzureMonitorWindowsAgent', 'AzureMonitorLinuxAgent')
+        __SCOPE__
+        | extend Vh = hash(tolower(tostring(split(id, '/extensions/')[0])))
+        | summarize L = make_list(strcat(iff(tostring(properties.provisioningState) =~ 'Succeeded', 'A', 'F'), Vh)) by B = abs(Vh) % 200
+        | extend k = 1) on k
+    | mv-expand L to typeof(string)
+    | summarize AmaOk = max(iff(L startswith 'A', 1, 0)) by Vh = tolong(substring(L, 1));
+let nics = datatable(k:int)[1]
+    | join kind=inner hint.remote=left (arg("").Resources
+        | where type =~ 'microsoft.network/networkinterfaces' and isnotempty(properties.virtualMachine.id)
+        | where '{Subscription}' == '*' or subscriptionId =~ '{Subscription}'
+        | where tostring(properties.primary) != 'false'
+        | extend Sn = tolower(tostring(properties.ipConfigurations[0].properties.subnet.id)),
+                 NicNsg = tolower(tostring(split(tostring(properties.networkSecurityGroup.id), '/')[8])),
+                 Vh = hash(tolower(tostring(properties.virtualMachine.id)))
+        | summarize H = strcat_array(make_list(Vh), ',') by Sn, NicNsg
+        | summarize L = make_list(strcat(Sn, '|', NicNsg, '|', H)) by B = abs(hash(Sn)) % 500
+        | extend k = 1) on k
+    | mv-expand L to typeof(string)
+    | extend P = split(L, '|')
+    | project SubnetId = tostring(P[0]), NicNsg = tostring(P[1]), Vh = split(tostring(P[2]), ',')
+    | mv-expand Vh
+    | summarize arg_max(SubnetId, NicNsg) by Vh = tolong(Vh);
+let subnets = datatable(k:int)[1]
+    | join kind=inner hint.remote=left (arg("").Resources
+        | where type =~ 'microsoft.network/virtualnetworks'
+        | mv-expand S = properties.subnets limit 2000
+        | extend Sid = tolower(tostring(S.id)),
+                 Nsg = tolower(tostring(split(tostring(S.properties.networkSecurityGroup.id), '/')[8])),
+                 Rt = tolower(tostring(split(tostring(S.properties.routeTable.id), '/')[8]))
+        | summarize L = make_list(strcat(Sid, '|', Nsg, '|', Rt)) by B = abs(hash(Sid)) % 500
+        | extend k = 1) on k
+    | mv-expand L to typeof(string)
+    | extend P = split(L, '|')
+    | project SubnetId = tostring(P[0]), SubnetNsg = tostring(P[1]), RouteTable = tostring(P[2]);
+let diag = state
+    | extend Vh = hash(VmId)
+    | join kind=leftouter ama on Vh
+    | join kind=leftouter nics on Vh
+    | extend AmaOk = coalesce(AmaOk, 0), SubnetId = iff(isempty(SubnetId), '(no nic found)', SubnetId);
+'@
+
     @{
         State    = $state
+        Diag     = $diag
         Timeline = $timeline
         Counts   = $state + @'
 
@@ -194,15 +242,36 @@ state
             Unhealthy = sum(iff(Health == 'Unhealthy', 1, 0)), Starting = sum(iff(Health == 'Starting', 1, 0)),
             Deallocated = sum(iff(Power == 'Deallocated', 1, 0)), Total = count()
 '@
-        Groups   = $state + @'
+        Groups   = $state + $diag + @'
 
-state
+diag
 | summarize Total = count(), Running = sum(iff(Power == 'Running', 1, 0)), Healthy = sum(iff(Health == 'Healthy', 1, 0)),
             Unhealthy = sum(iff(Health == 'Unhealthy', 1, 0)), Starting = sum(iff(Health == 'Starting', 1, 0)),
+            NoAma = sum(iff(Health == 'Unhealthy' and AmaOk == 0, 1, 0)),
             Deallocated = sum(iff(Power == 'Deallocated', 1, 0)) by SubscriptionId, ResourceGroup
 | extend UnhealthyPct = iff(Running == 0, 0.0, round(100.0 * Unhealthy / Running, 1))
 | order by Unhealthy desc, Running desc
 '@
+        # Per subnet: all running VMs of a subnet unhealthy (but AMA installed) points to the network path (NSG/UDR/firewall/DNS)
+        Subnets  = $state + $diag + $(& $expand @'
+
+diag
+| summarize Total = count(), Running = sum(iff(Power == 'Running', 1, 0)), Healthy = sum(iff(Health == 'Healthy', 1, 0)),
+            Unhealthy = sum(iff(Health == 'Unhealthy', 1, 0)), Starting = sum(iff(Health == 'Starting', 1, 0)),
+            NoAma = sum(iff(Health == 'Unhealthy' and AmaOk == 0, 1, 0)),
+            Deallocated = sum(iff(Power == 'Deallocated', 1, 0)),
+            NicNsg = strcat_array(make_set_if(NicNsg, isnotempty(NicNsg), 10), ', ') by SubnetId
+| join kind=leftouter subnets on SubnetId
+| extend P = split(SubnetId, '/')
+| extend Subnet = tostring(P[10]), VNet = tostring(P[8]), VNetResourceGroup = tostring(P[4]), VNetSubscription = tostring(P[2])
+| extend UnhealthyPct = iff(Running == 0, 0.0, round(100.0 * Unhealthy / Running, 1))
+| extend Assessment = case(Running == 0, 'No running VMs',
+                           Unhealthy == 0, 'OK',
+                           Healthy == 0 and NoAma == Unhealthy, 'No healthy VM - AMA extension missing/failed on all unhealthy VMs',
+                           Healthy == 0, 'No healthy VM - check NSG/UDR/firewall/proxy/DNS/Private Link, DCR',
+                           'Mixed - network path works, check the unhealthy VMs (AMA, DCR, OS)')
+| order by Unhealthy desc, Running desc
+'@)
     }
 }
 
@@ -224,15 +293,19 @@ function New-AmaHeartbeatWorkbookJson {
 
     $timelineQuery = $kql.Timeline + "`n| project TimeGenerated, Running, Healthy, Unhealthy, Deallocated, Starting"
 
-    $groupsQuery = $kql.Groups + "`n| project ResourceGroup, SubscriptionId, Running, Healthy, Unhealthy, UnhealthyPct, Starting, Deallocated, Total"
+    $groupsQuery = $kql.Groups + "`n| project ResourceGroup, SubscriptionId, Running, Healthy, Unhealthy, UnhealthyPct, NoAma, Starting, Deallocated, Total"
 
-    $detailQuery = $kql.State + @'
+    $subnetsQuery = $kql.Subnets + "`n| where '{SubnetFilter}' == '*' or SubnetId contains '{SubnetFilter}'`n| project Subnet, VNet, VNetResourceGroup, SubnetNsg, NicNsg, RouteTable, Running, Healthy, Unhealthy, UnhealthyPct, NoAma, Starting, Deallocated, Total, Assessment, VNetSubscription, SubnetId"
 
-state
+    $detailQuery = $kql.State + $kql.Diag + @'
+
+diag
 | where Health in ('Unhealthy', 'Starting')
+| where '{SubnetFilter}' == '*' or SubnetId contains '{SubnetFilter}'
 | order by Health desc, VM asc
 | take 5000
-| project Health, VM, ResourceGroup, SubscriptionId, LastBoot, LastHeartbeat, MinutesSince, Detail
+| project Health, VM, ResourceGroup, Subnet = tostring(split(SubnetId, '/')[10]), AmaExtension = iff(AmaOk == 1, 'OK', 'Missing/failed'),
+          SubscriptionId, LastBoot, LastHeartbeat, MinutesSince, Detail
 '@
 
     $laCommon = @{
@@ -343,9 +416,27 @@ state
             }
         }
         @{
-            type    = 3
-            name    = 'groups'
-            content = $laCommon + @{
+            type    = 9
+            name    = 'group-by'
+            content = @{
+                version    = 'KqlParameterItem/1.0'
+                style      = 'pills'
+                parameters = @(
+                    @{
+                        id = (& $paramId 'p8'); version = 'KqlParameterItem/1.0'; name = 'GroupBy'; label = 'Group health by'; type = 2; isRequired = $true
+                        value        = 'rg'
+                        jsonData     = (@(@{ value = 'rg'; label = 'Resource group' }, @{ value = 'subnet'; label = 'Subnet (NSG / route table)' }) | ConvertTo-Json -Compress)
+                        typeSettings = @{ additionalResourceOptions = @(); showDefault = $false }
+                    }
+                    @{ id = (& $paramId 'p9'); version = 'KqlParameterItem/1.0'; name = 'SubnetFilter'; label = 'Subnet filter (* = all, part of VNet/subnet name)'; type = 1; isRequired = $true; value = '*' }
+                )
+            }
+        }
+        @{
+            type                  = 3
+            name                  = 'groups'
+            conditionalVisibility = @{ parameterName = 'GroupBy'; comparison = 'isEqualTo'; value = 'rg' }
+            content               = $laCommon + @{
                 title         = 'Health grouped by resource group'
                 query         = $groupsQuery
                 size          = 0
@@ -358,7 +449,37 @@ state
                         @{ columnMatch = 'Deallocated'; formatter = 4; formatOptions = @{ palette = 'purple' } }
                     )
                     filter        = $true
-                    labelSettings = @(@{ columnId = 'UnhealthyPct'; label = 'Unhealthy % of running' })
+                    labelSettings = @(
+                        @{ columnId = 'UnhealthyPct'; label = 'Unhealthy % of running' }
+                        @{ columnId = 'NoAma'; label = 'Unhealthy w/o AMA extension' }
+                    )
+                }
+            }
+        }
+        @{
+            type                  = 3
+            name                  = 'subnets'
+            conditionalVisibility = @{ parameterName = 'GroupBy'; comparison = 'isEqualTo'; value = 'subnet' }
+            content               = $laCommon + @{
+                title               = 'Health grouped by subnet (primary NIC) - all VMs unhealthy = network path suspect, mixed = per-VM cause. Use the subnet filter to narrow the VM list.'
+                query               = $subnetsQuery
+                size                = 0
+                visualization       = 'table'
+                gridSettings        = @{
+                    formatters = @(
+                        @{ columnMatch = 'Healthy'; formatter = 4; formatOptions = @{ palette = 'green' } }
+                        @{ columnMatch = 'Unhealthy'; formatter = 4; formatOptions = @{ palette = 'red' } }
+                        @{ columnMatch = 'UnhealthyPct'; formatter = 0; numberFormat = @{ unit = 1; options = @{ style = 'decimal'; maximumFractionDigits = 1 } } }
+                        @{ columnMatch = 'Deallocated'; formatter = 4; formatOptions = @{ palette = 'purple' } }
+                        @{ columnMatch = 'SubnetId'; formatter = 5 }
+                    )
+                    filter        = $true
+                    labelSettings = @(
+                        @{ columnId = 'UnhealthyPct'; label = 'Unhealthy % of running' }
+                        @{ columnId = 'NoAma'; label = 'Unhealthy w/o AMA extension' }
+                        @{ columnId = 'SubnetNsg'; label = 'Subnet NSG' }
+                        @{ columnId = 'NicNsg'; label = 'NIC NSG(s)' }
+                    )
                 }
             }
         }
@@ -366,7 +487,7 @@ state
             type    = 3
             name    = 'vm-details'
             content = $laCommon + @{
-                title         = 'Running VMs that are not healthy (unhealthy + starting, max. 5000 - use the groups table to narrow the scope)'
+                title         = 'Running VMs that are not healthy (unhealthy + starting, max. 5000 - use the groups table to narrow the scope; subnet filter: {SubnetFilter})'
                 query         = $detailQuery
                 size          = 0
                 visualization = 'table'
