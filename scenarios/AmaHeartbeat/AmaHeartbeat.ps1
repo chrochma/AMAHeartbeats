@@ -480,7 +480,8 @@ function Invoke-AmaHeartbeatDeploy {
     }
 
     Register-LabResourceProviders -Namespaces @('Microsoft.Compute', 'Microsoft.Network', 'Microsoft.OperationalInsights', 'Microsoft.Insights')
-    $sku = Select-LabCheapestVmSku -Location $location -VmCount $vmCount -MinMemoryGB 1
+    # 2 GB minimum: on 1 GB SKUs (B1s) AMA + Defender for Endpoint run the guest out of memory and hang it
+    $sku = Select-LabCheapestVmSku -Location $location -VmCount $vmCount -MinMemoryGB 2
 
     $ctx = Get-AzContext
     $subId = $ctx.Subscription.Id

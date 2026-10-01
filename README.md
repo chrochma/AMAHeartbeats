@@ -38,7 +38,7 @@ A PowerShell console (TUI) tool for deploying ready-to-use Azure lab scenarios. 
 
 | Component | Details |
 |---|---|
-| VMs | 10 (1–50) × cheapest usable SKU with ≥ 1 GB RAM, Ubuntu 22.04 Gen2, Standard HDD, **no public IP**, NSG without inbound rules. Default region: **Sweden Central** |
+| VMs | 10 (1–50) × cheapest usable SKU with ≥ 2 GB RAM (e.g. `Standard_B1ms`), Ubuntu 22.04 Gen2, Standard HDD, **no public IP**, NSG without inbound rules. Default region: **Sweden Central** |
 | Agent | Azure Monitor Agent (`AzureMonitorLinuxAgent`), system-assigned identity, automatic upgrade |
 | Data | DCR → new Log Analytics workspace. Only critical syslog is collected, to keep ingestion cost low. AMA sends `Heartbeat` to every workspace set as a destination in an associated DCR |
 | Dashboard | Azure Monitor **workbook** "AzLabBuilder - AMA Heartbeat Health" |
@@ -46,6 +46,8 @@ A PowerShell console (TUI) tool for deploying ready-to-use Azure lab scenarios. 
 ### Dashboard
 
 The dashboard scales to **40,000 VMs**. Instead of listing every VM, it groups them into lines and boxes.
+
+The Azure Monitor Agent writes one `Heartbeat` record **per minute** ([Microsoft Learn](https://learn.microsoft.com/azure/azure-monitor/reference/tables/heartbeat); measured in the lab: median gap 60 s, p99 62 s). The default threshold of 10 min therefore tolerates about 9 missed heartbeats before a VM is flagged.
 
 A running VM only counts as **unhealthy** after it has been up for longer than the **startup grace** period (default 10 min) **and** has sent no AMA heartbeat within the **threshold** (default 10 min). The VM's start time comes from Azure **Resource Health** start/allocate/restart events (or its creation time). A freshly started VM without a heartbeat shows as **Starting**, so a VM that is still booting doesn't cause noise.
 
@@ -119,6 +121,7 @@ Blocked VMs are tracked by their private IP in the rule, so the tool always show
 
 ## Notes
 
+- Use VM sizes with **at least 2 GB RAM**. On 1 GB sizes (e.g. `Standard_B1s`) AMA plus an auto-installed Defender for Endpoint (`wdavdaemon`) can trigger the kernel OOM killer and hang the guest. Azure still reports the VM as running, but heartbeats stop, so the dashboard correctly shows it as unhealthy.
 - The first heartbeats arrive about 5–10 minutes after the agent is installed. VMs show as **Starting** during the grace period; if the agent takes longer than that, they show as **Unhealthy** until the first heartbeat arrives.
 - The VMs have no public IP. The subnet uses `defaultOutboundAccess: true`, so AMA can still reach Azure Monitor. That's fine for a lab, but use NAT Gateway or Firewall in production.
 - The admin user is `labadmin`. A random password is generated and can be shown once after deployment. To access a VM, use Serial Console or Bastion.
